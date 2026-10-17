@@ -55,7 +55,11 @@ class Mailbox:
         if not os.path.exists(path):
             return None
         with open(path, encoding="utf-8-sig") as f:
-            data = json.loads(f.read().strip())
+            text = f.read().strip()
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None  # the bridge is still writing it (no atomic rename in Host.IO)
         if consume:
             job = os.path.join(self._dir("inbox"), job_id + ".json")
             if os.path.exists(job):
