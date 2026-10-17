@@ -327,7 +327,12 @@ def _bridge(op, args, wait):
     mb = Mailbox()
     job_id = mb.enqueue(op, args)
     trigger_error = _trigger()
-    r = mb.wait(job_id, 10 if wait is None else wait)
+    wait = 10 if wait is None else wait
+    r = mb.wait(job_id, min(wait, 2))
+    if r is None and wait > 2 and not trigger_error:
+        # Studio One re-binds a newly created MIDI port only after a moment: press again.
+        trigger_error = _trigger()
+        r = mb.wait(job_id, wait - 2)
     if r is None:
         return {"status": "queued", "job_id": job_id, "midi_trigger_error": trigger_error,
                 "note": "The bridge has not run this job yet. Is Studio One running with a song open? "

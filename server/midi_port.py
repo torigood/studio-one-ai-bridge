@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Keep the "AI Bridge" virtual MIDI port open (for setting up the device in Studio One),
-or send one button press.
+"""Run the "AI Bridge" MIDI daemon in the foreground (for setting up the device in Studio One),
+or send one button press through it (starting it if needed).
 
-  python3 server/midi_port.py            # hold the port open until Ctrl+C
-  python3 server/midi_port.py run|play|stop
+  python3 server/midi_port.py            # run the daemon until Ctrl+C
+  python3 server/midi_port.py run|play|stop|status
 """
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,16 +14,15 @@ from s1bridge import midi  # noqa: E402
 
 CCS = {"run": midi.CC_RUN_JOBS, "play": midi.CC_PLAY, "stop": midi.CC_STOP}
 
-if not midi.open_source():
-    sys.exit("could not create MIDI source: %s" % midi.last_error())
 if len(sys.argv) > 1:
-    midi.press(CCS[sys.argv[1]])
-    time.sleep(0.2)
-    print("sent", sys.argv[1])
+    if sys.argv[1] == "status":
+        print(midi.status())
+    else:
+        midi.press(CCS[sys.argv[1]])
+        print("sent", sys.argv[1])
 else:
-    print('"AI Bridge" MIDI source is open. Ctrl+C to close.')
+    print('"AI Bridge" MIDI daemon running (exits at once if one is already running). Ctrl+C to stop.')
     try:
-        while True:
-            time.sleep(1)
+        midi.serve()
     except KeyboardInterrupt:
         pass

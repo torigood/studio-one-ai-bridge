@@ -21,7 +21,7 @@ AI client ──MCP (stdio)──► MCP server (Python, standard library only)
                                                                                  ▲
 Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ───────────────┘
       ▲
-      └── virtual MIDI port "AI Bridge" (CC 119, ch 16) ── created by the MCP server
+      └── virtual MIDI port "AI Bridge" (CC 119, ch 16) ── owned by a small MIDI daemon the MCP server starts
 ```
 
 - **Offline tools** (`song_*`, `library_*`, `audio_analyze`) need only Python. They read saved
@@ -112,8 +112,9 @@ async with server:
 
 ### 4. Connect the control surface (once)
 
-1. Start your AI client first, so the MCP server is running and has created the virtual MIDI
-   port **AI Bridge**. (Alternatively keep `python3 server/midi_port.py` running.)
+1. Run `python3 server/midi_port.py status` once. It starts a small background daemon that owns
+   the virtual MIDI port **AI Bridge** with a fixed CoreMIDI unique ID, so Studio One finds the
+   same port again after the AI client or the daemon restarts. (MCP servers start it on demand.)
 2. Start Studio One.
 3. **Studio One → Options → External Devices → Add...**, open the folder **local**, choose
    **AI Bridge**, set **Receive From** to **AI Bridge**, OK.
