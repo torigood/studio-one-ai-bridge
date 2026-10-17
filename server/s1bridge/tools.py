@@ -15,6 +15,7 @@ from .song import Song
 from . import library
 from . import vst3params
 from . import songwrite
+from . import loops
 from .keys import key_from_notes
 import subprocess
 import urllib.parse
@@ -70,8 +71,8 @@ TOOLS = [
      "inputSchema": _schema({})},
     {"name": "library_loops",
      "description": "Search loops in installed Studio One Sound Sets by words in the name/folder, "
-                    "kind (audioloop, musicloop, audio, midi) and bpm (+-3). Names only; "
-                    "placing a Sound Set loop into a song is not supported yet.",
+                    "kind (audioloop, musicloop, audio, midi) and bpm (+-3). audioloops whose length is indexed "
+                    "show loop_beats and can be placed with song_add_loop.",
      "inputSchema": _schema({"query": _S, "kind": {"type": "string", "enum": ["audioloop", "musicloop", "audio", "midi"]},
                              "bpm": _N, "limit": _I})},
     {"name": "library_effects",
@@ -104,6 +105,14 @@ TOOLS = [
          "points": {"type": "array", "items": _schema({"beat": _N, "value": _N}, ["beat", "value"])},
          "replace": {"type": "boolean"}, "step": {"type": "boolean"}},
          ["path", "track", "cc", "points"])},
+    {"name": "song_add_loop",
+     "description": "Place a Sound Set .audioloop (path or file name from library_loops) on an existing AUDIO track "
+                    "of a saved .song from start_beats (quarter notes from song start), repeated to fill "
+                    "length_beats (default one loop; the last copy is cut). The song must be CLOSED in Studio One "
+                    "(save, File > Close, reopen after). Needs the loop length index (loop_beats in library_loops). "
+                    "The original file is backed up first.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK, "loop": _S, "start_beats": _N, "length_beats": _N},
+                            ["path", "track", "loop", "start_beats"])},
     {"name": "audio_analyze",
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
@@ -382,7 +391,25 @@ def call(name, a):
     if name == "library_instruments":
         return library.instruments()
     if name == "library_loops":
-        return library.search_loops(a.get("query", ""), a.get("kind"), a.get("bpm"), a.get("limit", 50))
+        res = library.search_loops(a.get("query", ""), a.get("kind"), a.get("bpm"), a.get("limit", 50))
+        index, ids = loops.load_index(), loops.package_ids()
+        for item in res["loops"]:
+            if item["kind"] == "audioloop" and item["sound_set"] in ids:
+                info = index.get(loops.loop_url(item, ids))
+                if info:
+                    item["loop_beats"] = info["beats"]
+                    item["bpm"] = round(60 / info["tempo"], 2)
+        return res
+
+    if name == "song_add_loop":
+        path = _song_path(a["path"])
+        if _open_in_daw(path):
+            raise ToolError("the song is open in Studio One; save it, close it (File > Close), "
+                            "then call again and reopen it afterwards")
+        try:
+            return loops.add_loop(path, a["track"], a["loop"], a["start_beats"], a.get("length_beats"))
+        except songwrite.SongWriteError as e:
+            raise ToolError(str(e))
 
     if name == "library_effects":
         return library.effects()

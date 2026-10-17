@@ -26,7 +26,7 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
 
 - **Offline tools** (`song_*`, `library_*`, `audio_analyze`) need only Python. They read saved
   `.song` files, the plug-in list and Sound Set file names. They never write, except
-  `song_write_cc` (Studio One's scripting API cannot create CC).
+  `song_write_cc` and `song_add_loop` (Studio One's scripting API cannot create CC or import loops).
 - **Live tools** (`daw_*`) need the AI Bridge extension installed in Studio One. The server
   drops a job file in a mailbox folder and presses a virtual MIDI button; a small control
   surface maps that button to the extension's "Run Jobs" command, which runs the job in the open
@@ -124,6 +124,23 @@ async with server:
 If the MIDI trigger is not set up, each live request waits until you run
 **Track → AI Bridge - Run Jobs** by hand. Set `S1BRIDGE_MIDI=0` to disable the virtual port.
 
+### Optional: loop length index (for `song_add_loop`)
+
+A song refers to a Sound Set loop as `package://<sound set>/<path>`; the loop itself stays
+encrypted and Studio One decodes it. Repeating a loop needs its length, which Studio One only
+writes into a song when it saves one that uses the loop. Build the index once:
+
+1. Save and close a song that has an audio track (any test song; back it up yourself or note
+   that the next step adds ~2200 events to its first audio track).
+2. `cd server && python3 -m s1bridge.loops fill "/path/to/that.song"`
+3. Open it in Studio One, wait for it to load, **File > Save**, close it.
+4. `python3 -m s1bridge.loops harvest` (reads lengths from all saved songs into
+   `<data dir>/loops.json`; also run it later to pick up loops you placed by hand).
+5. Restore the song from your backup.
+
+Tempo comes from the song when Studio One stored one, else from a BPM number in the file name,
+else it is guessed (75-150 BPM, power-of-two beats).
+
 ### Optional: audio analysis
 
 `audio_analyze` and the audio part of `song_analyze` need numpy. Either create `.venv` in the
@@ -158,10 +175,11 @@ Then remove the device under Options → External Devices.
 | `song_track_notes` | Notes of one track in a saved song |
 | `song_analyze` | Key/range per track plus audio analysis, for arranging |
 | `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. The song must be closed in Studio One; the original is backed up first. The only tool that writes a file. |
+| `song_add_loop` | Place a Sound Set `.audioloop` on an audio track of a saved song, repeated to a length. Song closed; backed up first. Needs the loop length index (below). |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |
-| `library_loops` | Loop names in installed Sound Sets (names only) |
+| `library_loops` | Loops in installed Sound Sets, with length/BPM once indexed |
 | `commands_search` | Search the generated command catalog |
 | `daw_status`, `daw_ping` | Bridge health |
 | `daw_list_tracks`, `daw_list_mixer` | Tracks and mixer channels of the open song |

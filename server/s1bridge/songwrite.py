@@ -46,13 +46,27 @@ def _lane_title(song, identity, cc):
     return "MIDI CC 0|%d" % cc
 
 
-def _rewrite_zip(path, member, data):
+def rewrite_zip(path, members):
+    """Replace ZIP entries {name: bytes}; every other entry is copied as is."""
     tmp = path + ".aibridge-tmp"
     with zipfile.ZipFile(path) as src, zipfile.ZipFile(tmp, "w") as dst:
         for info in src.infolist():
-            raw = data if info.filename == member else src.read(info.filename)
+            raw = members[info.filename] if info.filename in members else src.read(info.filename)
             dst.writestr(info, raw, compress_type=info.compress_type)
     os.replace(tmp, path)
+
+
+def backup(path):
+    """Copy the song to <data dir>/backups before changing it. Returns the copy's path."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    stem = "%s %s" % (os.path.splitext(os.path.basename(path))[0], time.strftime("%Y%m%d-%H%M%S"))
+    dest = os.path.join(BACKUP_DIR, stem + ".song")
+    n = 1
+    while os.path.exists(dest):
+        n += 1
+        dest = os.path.join(BACKUP_DIR, "%s (%d).song" % (stem, n))
+    shutil.copy2(path, dest)
+    return dest
 
 
 def write_cc(path, track, cc, points, part=None, replace=True, step=False):
@@ -123,15 +137,8 @@ def write_cc(path, track, cc, points, part=None, replace=True, step=False):
         old = [e for e in old if not lo <= _f(e.get("start")) <= hi]
     lane["events"] = sorted(old + new, key=lambda e: _f(e.get("start")))
 
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-    stem = "%s %s" % (os.path.splitext(os.path.basename(path))[0], time.strftime("%Y%m%d-%H%M%S"))
-    backup = os.path.join(BACKUP_DIR, stem + ".song")
-    n = 1
-    while os.path.exists(backup):
-        n += 1
-        backup = os.path.join(BACKUP_DIR, "%s (%d).song" % (stem, n))
-    shutil.copy2(path, backup)
-    _rewrite_zip(path, member, ubjson.dumps(data))
+    bak = backup(path)
+    rewrite_zip(path, {member: ubjson.dumps(data)})
     return {"track": track_name, "part": part, "part_start_beats": p_start, "cc": cc, "lane": title,
             "points_written": len(new), "lane_points": len(lane["events"]), "clip_file": member,
-            "shared_clip": shared, "backup": backup}
+            "shared_clip": shared, "backup": bak}
