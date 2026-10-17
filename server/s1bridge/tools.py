@@ -161,6 +161,24 @@ TOOLS = [
                              "track": _TRACK, "list": _N, "index": _N,
                              "path": {"type": "array"}, "names": {"type": "array", "items": _S},
                              "wait": _WAIT}, ["root"])},
+    {"name": "daw_list_events",
+     "description": "Events (parts/audio clips) on a track of the open song, in order: index, name, start, "
+                    "length, offset, speed. index is what daw_call's {event: {track, index}} refers to.",
+     "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
+    {"name": "daw_repeat_event",
+     "description": "Repeat an event (audio loop or instrument part) on a track of the open song: the event that "
+                    "starts at start_beats is copied times times back to back after itself (Edit > Duplicate; "
+                    "shared=true uses Duplicate Shared). Live counterpart of song_add_loop's repeat for loops "
+                    "already in the song; it cannot bring in a new loop file. Changes the selection.",
+     "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "times": _I, "shared": {"type": "boolean"},
+                             "wait": _WAIT}, ["track", "start_beats"])},
+    {"name": "daw_call",
+     "description": "API experiment: run steps that call Studio One script methods with objects resolved by "
+                    "reference. Step: {as?, on: expr, call?: method, args?: [expr], get?: prop, set?: prop, "
+                    "value?: expr, names?: [props to report]}. expr: {var: name} | {track: ref} | "
+                    "{event: {track, index}} | {functions: 'AudioFunctions'} ('' = context.functions) | "
+                    "{time: beats} | {context: true} | literal. Stops at the first error. CAN EDIT THE SONG.",
+     "inputSchema": _schema({"steps": {"type": "array", "items": {"type": "object"}}, "wait": _WAIT}, ["steps"])},
     {"name": "daw_list_mixer",
      "description": "Mixer channels of the open song with their parameters (index, name, label, channelType). "
                     "Instrument tracks (MusicTrack) have no volume/pan; their sound goes through an AudioSynth channel.",
@@ -381,6 +399,45 @@ def _bridge(op, args, wait):
     return r.get("result")
 
 
+def _events(track, wait):
+    r = _bridge("list_events", {"track": track}, wait)
+    if isinstance(r, dict) and r.get("status") == "queued":
+        raise ToolError("the bridge did not answer; is Studio One running with a song open?")
+    return r["events"]
+
+
+def _repeat_event(track, start_beats, times, shared, wait):
+    # Observed 0.6.0: editor.createSelectFunctions(functions).selectMultiple([event]) then Edit/Duplicate
+    # puts a copy right after the event and selects the copy, so N presses give N back-to-back copies.
+    if not 1 <= times <= 64:
+        raise ToolError("times must be 1..64")
+    before = _events(track, wait)
+    hits = [e for e in before if abs(e["start"] - start_beats) < 1e-6]
+    if not hits:
+        raise ToolError("no event starts at beat %s on %s; events start at %s"
+                        % (start_beats, track, sorted(e["start"] for e in before)))
+    r = _bridge("call", {"steps": [
+        {"as": "ed", "on": {"context": True}, "get": "editor"},
+        {"as": "sel", "on": {"var": "ed"}, "get": "selection"},
+        {"on": {"var": "sel"}, "call": "unselectAll"},
+        {"as": "sf", "on": {"var": "ed"}, "call": "createSelectFunctions", "args": [{"functions": ""}]},
+        {"on": {"var": "sf"}, "call": "selectMultiple",
+         "args": [[{"event": {"track": track, "index": hits[0]["index"]}}]]}]}, wait)
+    last = (r.get("results") or [{}])[-1]
+    if last.get("value") != 1:
+        raise ToolError("could not select the event: %s" % r)
+    for _ in range(times):
+        _bridge("command", {"category": "Edit", "name": "Duplicate Shared" if shared else "Duplicate"}, wait)
+    old = {(e["start"], e["length"], e["offset"]) for e in before}
+    added = sorted((e for e in _events(track, wait) if (e["start"], e["length"], e["offset"]) not in old),
+                   key=lambda e: e["start"])
+    out = {"track": track, "event": hits[0]["name"], "copies": [{"start": e["start"], "length": e["length"]}
+                                                                for e in added]}
+    if len(added) != times:
+        out["warning"] = "expected %d new events, found %d" % (times, len(added))
+    return out
+
+
 def call(name, a):
     if name == "song_list":
         files = [p for p in glob.glob(os.path.join(SONGS_ROOT, "**", "*.song"), recursive=True)
@@ -484,6 +541,12 @@ def call(name, a):
         return _bridge("inspect_mixer", {k: a[k] for k in ("track",) if k in a}, wait)
     if name == "daw_probe":
         return _bridge("probe", {k: a[k] for k in ("root", "track", "list", "index", "path", "names", "url") if k in a}, wait)
+    if name == "daw_list_events":
+        return _bridge("list_events", {"track": a["track"]}, wait)
+    if name == "daw_repeat_event":
+        return _repeat_event(a["track"], a["start_beats"], a.get("times", 1), a.get("shared", False), wait)
+    if name == "daw_call":
+        return _bridge("call", {"steps": a["steps"]}, wait)
     if name == "daw_list_mixer":
         return _bridge("list_mixer", {}, wait)
     if name == "daw_set_channel_param":

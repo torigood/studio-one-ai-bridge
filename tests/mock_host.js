@@ -25,8 +25,10 @@ class Url {
 
 function makeTrack (name, mediaType) {
 	const params = {};
+	const events = [{ name: name + " 1", start: 0, length: 8, mediaType }];
 	return {
-		name, mediaType, color: "FF000000",
+		name, mediaType, color: "FF000000", events,
+		createIterator: () => { let i = 0; return { done: () => i >= events.length, next: () => events[i++] }; },
 		channel: {
 			channelType: mediaType === "Music" ? "MusicTrack" : "AudioTrack",
 			findParameter: (n) => (params[n] = params[n] || { value: 0, setValue (v) { this.value = v; calls.push(["setValue", name, n, v]); } }),
@@ -41,6 +43,7 @@ const functions = {
 	newMediaTime: () => ({ musical: 0 }),
 	addMediaTrack: (i, n, f) => { const t = makeTrack(n, f === "Instrument" ? "Music" : "Audio"); tracks.splice(i, 0, t); return t; },
 	addTrack: (type, i, n) => { const t = makeTrack(n, type); tracks.splice(i, 0, t); return t; },
+	addEventOnTrack: (t, e, s) => { const c = Object.assign({}, e, { start: s.musical }); t.events.push(c); calls.push(["addEventOnTrack", t.name, e.name, s.musical]); return c; },
 	insertNewClip: (kind, s, e, t) => { calls.push(["insertNewClip", kind, s.musical, e.musical, t.name]); return { kind }; },
 	root: {
 		createFunctions: () => ({

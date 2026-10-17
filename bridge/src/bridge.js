@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.5.3";
+const kBridgeVersion = "0.6.0";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -561,6 +561,121 @@ Ops.probe = function (context, args)
 			res.params = probeParams (obj);
 	}
 	return res;
+};
+
+// Events of a track in order (track.createIterator (): done/next/first/last/previous, observed 0.5.3).
+function trackEvents (track, limit)
+{
+	let out = [];
+	let it = track && typeof track.createIterator === "function" ? track.createIterator () : null;
+	while(it && !it.done () && out.length < (limit || 1000))
+		out.push (it.next ());
+	return out;
+}
+
+const kEventProps = ["name", "start", "length", "offset", "speed", "tune", "isMuted", "mediaType", "trackID"];
+
+function describeEvent (e, index)
+{
+	let d = probeProps (e, kEventProps);
+	d.index = index;
+	return d;
+}
+
+Ops.list_events = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	return { track: track.name, events: trackEvents (track).map (describeEvent) };
+};
+
+// Generic method call for API experiments: objects are resolved by reference, so methods that
+// take tracks/events/times can be tried without a new build.
+// args.steps: [{as?, on: expr, call?: name, args?: [expr], get?: name, set?: name, value?: expr, names?: [..]}]
+// expr: {var: name} | {track: ref} | {event: {track, index}} | {functions: name} ("" = context.functions)
+//       | {time: beats} | {context: true} | anything else is a literal.
+// Function sets are created once per job, so executeImmediately set on one is seen by later calls.
+// Methods are called only if typeof is "function"; natives given wrong arguments return 0 (observed 0.5.3).
+Ops.call = function (context, args)
+{
+	let vars = {}, sets = {};
+	function functionsNamed (name)
+	{
+		if(!name)
+			return context.functions;
+		if(!sets[name])
+			sets[name] = context.functions.root.createFunctions (name);
+		return sets[name];
+	}
+	function resolve (x)
+	{
+		if(!x || typeof x !== "object" || Array.isArray (x))
+			return Array.isArray (x) ? x.map (resolve) : x;
+		if("var" in x) return vars[x["var"]];
+		if("track" in x) return findTrack (context, x.track);
+		if("event" in x) return trackEvents (findTrack (context, x.event.track))[x.event.index || 0];
+		if("functions" in x) return functionsNamed (x.functions);
+		if("time" in x) return mediaTime (context.functions, x.time);
+		if("context" in x) return context;
+		return x;
+	}
+	function report (v, names)
+	{
+		let d = { value: describeValue (v) };
+		if(v && typeof v === "object")
+		{
+			d.props = {};
+			for(let n of (names || kEventProps.concat (["musical", "seconds"])))
+			{
+				try
+				{
+					let p = v[n];
+					if(p !== undefined)
+						d.props[n] = typeof p === "function" ? "function" : describeValue (p);
+				}
+				catch(e) { d.props[n] = "error: " + e; }
+			}
+		}
+		return d;
+	}
+	let results = [];
+	for(let step of (args.steps || []))
+	{
+		let on = resolve (step.on);
+		let v;
+		if(on === null || on === undefined)
+		{
+			results.push ({ error: "target is " + on });
+			break;
+		}
+		if(step.call !== undefined)
+		{
+			if(typeof on[step.call] !== "function")
+			{
+				results.push ({ error: "not a function: " + step.call });
+				break;
+			}
+			try { v = on[step.call].apply (on, resolve (step.args || [])); }
+			catch(e) { results.push ({ error: String (e) }); break; }
+		}
+		else if(step.set !== undefined)
+		{
+			try { on[step.set] = resolve (step.value); v = on[step.set]; }
+			catch(e) { results.push ({ error: String (e) }); break; }
+		}
+		else if(step.get !== undefined)
+			v = on[step.get];
+		else
+			v = on;
+		if(step.as)
+			vars[step.as] = v;
+		results.push (report (v, step.names));
+	}
+	for(let k in sets)
+		try { sets[k].executeImmediately = false; } catch(e) {}
+	try { context.functions.executeImmediately = false; } catch(e) {}
+	return { results: results };
 };
 
 function mixerChannelList (context)

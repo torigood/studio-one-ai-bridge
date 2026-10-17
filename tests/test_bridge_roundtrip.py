@@ -61,6 +61,25 @@ class RoundTrip(unittest.TestCase):
         # results consumed above -> inbox cleaned by Python
         self.assertEqual(os.listdir(os.path.join(self.mb.root, "inbox")), [])
 
+    def test_call_and_list_events(self):
+        call = self.mb.enqueue("call", {"steps": [
+            {"on": {"functions": ""}, "set": "executeImmediately", "value": True},
+            {"as": "copy", "on": {"functions": ""}, "call": "addEventOnTrack",
+             "args": [{"track": "Vox"}, {"event": {"track": "Vox", "index": 0}}, {"time": 8}]},
+            {"on": {"var": "copy"}, "get": "start"},
+            {"on": {"functions": ""}, "call": "noSuchMethod"},
+            {"on": {"var": "copy"}}]})
+        events = self.mb.enqueue("list_events", {"track": "Vox"})
+        calls = self.run_bridge()
+        steps = self.mb.result(call)["result"]["results"]
+        self.assertIn(["addEventOnTrack", "Vox", "Vox 1", 8], calls)
+        self.assertEqual(steps[0]["value"], True)
+        self.assertEqual(steps[1]["props"]["start"], 8)
+        self.assertEqual(steps[2]["value"], 8)
+        self.assertIn("not a function", steps[3]["error"])
+        self.assertEqual(len(steps), 4)  # stops at the first error
+        self.assertEqual([e["start"] for e in self.mb.result(events)["result"]["events"]], [0, 8])
+
     def test_jobs_not_rerun(self):
         job = self.mb.enqueue("add_track", {"type": "folder", "name": "Once"})
         self.run_bridge()
