@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.egg-info/
+/build/
+/dist/
+.venv/
+.DS_Store
+
+# build output
+bridge/dist/
+
+# local install backups (contain absolute paths of this machine)
+install/backups/
+
+# Generated on the user's machine from their Studio One installation; never commit
+catalog/
+re/extracted/
+
+# bridge discovery dumps
+host-api*.json

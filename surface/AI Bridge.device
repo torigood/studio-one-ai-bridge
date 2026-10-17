@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- XML-only ControlSurfaceDevice (no script), in the format Studio One uses for device definitions. -->
+<DeviceDefinition
+	vendor="local"
+	name="AI Bridge"
+
+	classID="{8C927C40-0146-4160-8F9C-2535B49B6F6F}"
+	category="Surface"
+
+	nativeCode="ControlSurfaceDevice"
+	surfaceFile="AI Bridge.surface.xml"
+	/>

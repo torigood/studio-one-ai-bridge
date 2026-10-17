@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "studio-one-ai-bridge"
+version = "0.1.0"
+description = "MCP server that lets an AI read and operate Studio One 5 (unofficial)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+[project.optional-dependencies]
+analysis = ["numpy"]
+
+[project.scripts]
+studio-one-ai-bridge = "s1bridge.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "server" }
+packages = ["s1bridge"]

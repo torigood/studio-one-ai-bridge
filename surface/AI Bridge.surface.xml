@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AI Bridge virtual surface. MIDI comes from the "AI Bridge" virtual source created by
+     server/s1bridge/midi.py, MIDI channel 16 (status #B0 + channel="15" = Control Change on ch16).
+     Uses the surface.xml format Studio One uses for MIDI controllers. -->
+<ControlSurface>
+
+	<Controls>
+		<!-- CC 119 on ch16: run pending mailbox jobs -->
+		<Control name="runJobsButton" title="Run Jobs" type="button" options="receive">
+			<MidiMessage status="#B0" channel="15" address="#77"/>
+		</Control>
+		<!-- CC 118 / 117 on ch16: transport -->
+		<Control name="playButton" title="Play" type="button" options="receive">
+			<MidiMessage status="#B0" channel="15" address="#76"/>
+		</Control>
+		<Control name="stopButton" title="Stop" type="button" options="receive">
+			<MidiMessage status="#B0" channel="15" address="#75"/>
+		</Control>
+	</Controls>
+
+	<Mappings>
+		<Global>
+			<Command control="runJobsButton" command.category="Track" command.name="AI Bridge - Run Jobs"/>
+		</Global>
+
+		<DeviceMapping device="TransportPanel">
+			<Toggle control="playButton" param="start"/>
+			<Toggle control="stopButton" param="stop"/>
+		</DeviceMapping>
+	</Mappings>
+
+</ControlSurface>
