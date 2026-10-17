@@ -16,11 +16,22 @@
 		<Control name="stopButton" title="Stop" type="button" options="receive">
 			<MidiMessage status="#B0" channel="15" address="#75"/>
 		</Control>
+		<!-- CC 116 / 115 on ch16: File > Save / File > Close. Close must not run from a script job:
+		     interpretCommand ("File", "Close") inside the Run Jobs edit task crashed Studio One 5.5.2
+		     (EXC_BAD_ACCESS, 2026-10-17), so the server presses these like a key instead. -->
+		<Control name="saveButton" title="Save" type="button" options="receive">
+			<MidiMessage status="#B0" channel="15" address="#74"/>
+		</Control>
+		<Control name="closeButton" title="Close" type="button" options="receive">
+			<MidiMessage status="#B0" channel="15" address="#73"/>
+		</Control>
 	</Controls>
 
 	<Mappings>
 		<Global>
 			<Command control="runJobsButton" command.category="Track" command.name="AI Bridge - Run Jobs"/>
+			<Command control="saveButton" command.category="File" command.name="Save"/>
+			<Command control="closeButton" command.category="File" command.name="Close"/>
 		</Global>
 
 		<DeviceMapping device="TransportPanel">

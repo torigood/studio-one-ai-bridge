@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.6.0";
+const kBridgeVersion = "0.7.0";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -588,6 +588,166 @@ Ops.list_events = function (context, args)
 	if(!track)
 		return fail ("track not found: " + args.track);
 	return { track: track.name, events: trackEvents (track).map (describeEvent) };
+};
+
+// Notes of a part in time order. part.createSequenceIterator () (ExplodePitches.js); part.createIterator ()
+// returns null for music parts. note.start/length are quarter notes from the part start,
+// note.startTime.musical is the song position (observed 0.6.0).
+function partNotes (part)
+{
+	let out = [];
+	let it = part.createSequenceIterator ();
+	while(it && !it.done () && out.length < 10000)
+		out.push (it.next ());
+	return out;
+}
+
+function musicParts (track)
+{
+	return trackEvents (track).filter (e => typeof e.createSequenceIterator === "function")
+		.sort ((a, b) => a.start - b.start);
+}
+
+function findPart (track, startBeats)
+{
+	for(let p of musicParts (track))
+		if(Math.abs (p.start - startBeats) < 1e-6)
+			return p;
+	return null;
+}
+
+Ops.read_notes = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	let parts = musicParts (track);
+	if(args.part_start !== undefined)
+		parts = parts.filter (p => Math.abs (p.start - args.part_start) < 1e-6);
+	return { track: track.name, parts: parts.map (p => {
+		let notes = partNotes (p).map ((n, i) => {
+			let d = { index: i, pitch: n.pitch, velocity: Math.round (n.velocity * 1000) / 1000,
+				start: n.start, length: n.length };
+			try { d.beat = n.startTime.musical; } catch(e) {}
+			if(n.isMuted)
+				d.muted = 1;
+			return d;
+		});
+		return { start: p.start, length: p.length, offset: p.offset, muted: p.isMuted ? 1 : 0, notes: notes };
+	}) };
+};
+
+// Edits refer to note indexes as returned by read_notes before this call (time order).
+// MusicFunctions (ExplodePitches.js, musicedit/Util.js): modifyPitch, modifyVelocity, moveEvent (note, start),
+// resizeEvent (note, length), deleteEvent (note); start/length relative to the part (observed 0.6.0).
+Ops.edit_notes = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	let part = findPart (track, args.part_start);
+	if(!part)
+		return fail ("no instrument part starts at beat " + args.part_start + " on " + track.name);
+	let notes = partNotes (part);
+	for(let e of (args.edits || []))
+		if(!(e.index >= 0 && e.index < notes.length))
+			return fail ("note index out of range: " + e.index + " (part has " + notes.length + " notes)");
+	let mf = context.functions.root.createFunctions ("MusicFunctions");
+	mf.executeImmediately = true;
+	let changed = 0, deleted = 0, added = 0;
+	for(let e of (args.edits || []))
+	{
+		let n = notes[e.index];
+		if(e["delete"])
+		{
+			mf.deleteEvent (n);
+			deleted++;
+			continue;
+		}
+		if(e.pitch !== undefined) mf.modifyPitch (n, e.pitch);
+		if(e.velocity !== undefined) mf.modifyVelocity (n, e.velocity);
+		if(e.length !== undefined) mf.resizeEvent (n, e.length);
+		if(e.start !== undefined) mf.moveEvent (n, e.start);
+		changed++;
+	}
+	for(let a of (args.add || []))
+	{
+		let note = mf.createEvent ("Note");
+		mf.insertEvent (part, note);
+		mf.modifyPitch (note, a.pitch);
+		mf.modifyVelocity (note, a.velocity !== undefined ? a.velocity : 0.8);
+		mf.resizeEvent (note, a.length);
+		mf.moveEvent (note, a.start);
+		added++;
+	}
+	mf.executeImmediately = false;
+	return { track: track.name, part_start: part.start, changed: changed, deleted: deleted, added: added,
+		notes: partNotes (part).length };
+};
+
+// Chord track: editor.model.chords.getChordTrack () (toolsets.js uses editor.model.chords); events expose
+// start/length and chord {name ("D♯m7"), root, bass, type}. Chords cannot be created or changed from
+// script (ChordFunctions.createEvent and chords.addChordEvent return undefined, chord.root is read-only; 0.6.0).
+Ops.read_chords = function (context, args)
+{
+	let editor = context.editor;
+	let chords = editor && editor.model ? editor.model.chords : null;
+	let track = chords && typeof chords.getChordTrack === "function" ? chords.getChordTrack () : null;
+	if(!track)
+		return fail ("no chord track");
+	return { chords: trackEvents (track).map (e => {
+		let c = e.chord;
+		return { start: e.start, length: e.length, name: c ? c.name : null };
+	}).sort ((a, b) => a.start - b.start) };
+};
+
+// Transport panel parameters: environment.find ("TransportPanel") (device:///TransportPanel in ATOM.surface.xml).
+// Observed 0.6.0: tempo (10..400) changes the tempo segment at the playhead; timeSignatureNum/Denom insert a
+// signature change at the start of the playhead's bar; primaryTime (string "0003.01.01.00" when
+// primaryTimeFormat is Bars) moves the playhead. args.set: [[name, value]] in order, a number uses
+// setValue, a string fromString. args.restore_position puts the playhead back afterwards.
+const kTransportParams = ["tempo", "timeSignatureNum", "timeSignatureDenom", "primaryTime", "primaryTimeFormat",
+	"secondaryTime", "loop", "loopStart", "loopEnd", "punch", "precount"];
+
+Ops.transport = function (context, args)
+{
+	let panel = context.functions.root.environment.find ("TransportPanel");
+	if(!panel)
+		return fail ("TransportPanel not found");
+	function read ()
+	{
+		let out = {};
+		for(let n of kTransportParams)
+		{
+			let p = panel.findParameter (n);
+			if(p)
+				out[n] = p.string;
+		}
+		return out;
+	}
+	let before = read ();
+	for(let pair of (args.set || []))
+	{
+		let p = panel.findParameter (pair[0]);
+		if(!p)
+			return fail ("transport parameter not found: " + pair[0]);
+		if(typeof pair[1] === "string")
+			p.fromString (pair[1]);
+		else
+			p.setValue (pair[1], true);
+	}
+	if(args.restore_position && before.primaryTime)
+		panel.findParameter ("primaryTime").fromString (before.primaryTime);
+	let res = { before: before, after: read () };
+	try
+	{
+		let tc = context.functions.root.timeContext;
+		let sig = tc.getTimeSignature (args.at_beat || 0);
+		res.time_signature_at = { beat: args.at_beat || 0, numerator: sig.numerator, denominator: sig.denominator };
+		res.seconds_per_beat = tc.ppqToSeconds (1);
+	}
+	catch(e) {}
+	return res;
 };
 
 // Generic method call for API experiments: objects are resolved by reference, so methods that

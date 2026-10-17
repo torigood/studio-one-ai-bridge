@@ -26,6 +26,11 @@ class Url {
 function makeTrack (name, mediaType) {
 	const params = {};
 	const events = [{ name: name + " 1", start: 0, length: 8, mediaType }];
+	if (mediaType === "Music") {
+		const notes = [{ pitch: 60, velocity: 0.8, start: 0, length: 1 }, { pitch: 64, velocity: 0.7, start: 1, length: 1 }];
+		events[0].notes = notes;
+		events[0].createSequenceIterator = () => { const l = notes.slice().sort((a, b) => a.start - b.start); let i = 0; return { done: () => i >= l.length, next: () => l[i++] }; };
+	}
 	return {
 		name, mediaType, color: "FF000000", events,
 		createIterator: () => { let i = 0; return { done: () => i >= events.length, next: () => events[i++] }; },
@@ -38,6 +43,12 @@ function makeTrack (name, mediaType) {
 
 const tracks = [makeTrack("Piano", "Music"), makeTrack("Vox", "Audio")];
 
+const tparams = { tempo: 120, timeSignatureNum: 4, primaryTime: "0001.01.01.00" };
+const transportPanel = { findParameter: (n) => (n in tparams ? {
+	get string () { return String(tparams[n]); },
+	setValue (v) { tparams[n] = v; calls.push(["transport", n, v]); },
+	fromString (v) { tparams[n] = v; calls.push(["transport", n, v]); } } : null) };
+
 const functions = {
 	executeImmediately: false,
 	newMediaTime: () => ({ musical: 0 }),
@@ -46,9 +57,12 @@ const functions = {
 	addEventOnTrack: (t, e, s) => { const c = Object.assign({}, e, { start: s.musical }); t.events.push(c); calls.push(["addEventOnTrack", t.name, e.name, s.musical]); return c; },
 	insertNewClip: (kind, s, e, t) => { calls.push(["insertNewClip", kind, s.musical, e.musical, t.name]); return { kind }; },
 	root: {
+		environment: { find: (n) => (n === "TransportPanel" ? transportPanel : null) },
+		timeContext: { getTimeSignature: () => ({ numerator: 4, denominator: 4 }), ppqToSeconds: (b) => b * 0.5 },
 		createFunctions: () => ({
-			createEvent: () => ({}),
-			insertEvent: (p, n) => calls.push(["insertEvent"]),
+			createEvent: () => ({ velocity: 0, start: 0, length: 0 }),
+			insertEvent: (p, n) => { calls.push(["insertEvent"]); if (p.notes) p.notes.push(n); },
+			deleteEvent: (n) => { for (const t of tracks) for (const e of t.events) if (e.notes) { const i = e.notes.indexOf(n); if (i >= 0) e.notes.splice(i, 1); } },
 			modifyPitch: (n, v) => (n.pitch = v),
 			modifyVelocity: (n, v) => (n.velocity = v),
 			resizeEvent: (n, v) => (n.length = v),

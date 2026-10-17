@@ -80,6 +80,27 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(len(steps), 4)  # stops at the first error
         self.assertEqual([e["start"] for e in self.mb.result(events)["result"]["events"]], [0, 8])
 
+    def test_notes_and_transport(self):
+        read = self.mb.enqueue("read_notes", {"track": "Piano"})
+        edit = self.mb.enqueue("edit_notes", {"track": "Piano", "part_start": 0,
+                                              "edits": [{"index": 1, "pitch": 65, "start": 2}, {"index": 0, "delete": True}],
+                                              "add": [{"pitch": 72, "start": 3, "length": 1}]})
+        bad = self.mb.enqueue("edit_notes", {"track": "Piano", "part_start": 0, "edits": [{"index": 9, "pitch": 1}]})
+        reread = self.mb.enqueue("read_notes", {"track": "Piano"})
+        tr = self.mb.enqueue("transport", {"set": [["primaryTime", "0002.01.01.00"], ["tempo", 128]],
+                                           "restore_position": True})
+        calls = self.run_bridge()
+        notes = self.mb.result(read)["result"]["parts"][0]["notes"]
+        self.assertEqual([(n["index"], n["pitch"], n["start"]) for n in notes], [(0, 60, 0), (1, 64, 1)])
+        self.assertEqual(self.mb.result(edit)["result"]["notes"], 2)
+        self.assertIn("out of range", self.mb.result(bad)["error"])
+        after = self.mb.result(reread)["result"]["parts"][0]["notes"]
+        self.assertEqual([(n["pitch"], n["start"]) for n in after], [(65, 2), (72, 3)])
+        t = self.mb.result(tr)["result"]
+        self.assertEqual(t["after"]["tempo"], "128")
+        self.assertEqual(t["after"]["primaryTime"], "0001.01.01.00")
+        self.assertIn(["transport", "tempo", 128], calls)
+
     def test_jobs_not_rerun(self):
         job = self.mb.enqueue("add_track", {"type": "folder", "name": "Once"})
         self.run_bridge()

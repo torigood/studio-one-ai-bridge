@@ -142,3 +142,36 @@ def write_cc(path, track, cc, points, part=None, replace=True, step=False):
     return {"track": track_name, "part": part, "part_start_beats": p_start, "cc": cc, "lane": title,
             "points_written": len(new), "lane_points": len(lane["events"]), "clip_file": member,
             "shared_clip": shared, "backup": bak}
+
+
+def write_time_signatures(path, signatures):
+    """Replace the song's time signature map. signatures: [{"bar": 1-based, "numerator", "denominator"}],
+    bar 1 required. song.xml: TimeSignatureMap/TimeSignatureMapSegment start (quarter notes) numerator denominator.
+    Live setting through the transport panel was unreliable (docs/re-findings.md), so this is offline."""
+    import re
+    sigs = sorted(signatures, key=lambda s: int(s["bar"]))
+    if not sigs or int(sigs[0]["bar"]) != 1:
+        raise SongWriteError("the first signature must be at bar 1")
+    segs, beat, bar, cur = [], 0.0, 1, None
+    for s in sigs:
+        num, den, target = int(s["numerator"]), int(s["denominator"]), int(s["bar"])
+        if not 1 <= num <= 32 or den not in (2, 4, 8, 16):
+            raise SongWriteError("bad signature %s/%s" % (num, den))
+        if cur:
+            beat += (target - bar) * cur[0] * 4.0 / cur[1]
+        elif target != 1:
+            raise SongWriteError("the first signature must be at bar 1")
+        bar, cur = target, (num, den)
+        segs.append((beat, num, den, target))
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("Song/song.xml").decode("utf-8-sig")
+    m = re.search(r'(<TimeSignatureMap x:id="timeSignatureMap">)(.*?)(\s*</TimeSignatureMap>)', xml, re.S)
+    if not m:
+        raise SongWriteError("song has no TimeSignatureMap")
+    body = "".join('\n\t\t\t\t<TimeSignatureMapSegment start="%s" numerator="%d" denominator="%d"/>'
+                   % (("%.6f" % b).rstrip("0").rstrip("."), n, d) for b, n, d, _ in segs)
+    xml = xml[:m.start(2)] + body + xml[m.end(2):]
+    bak = backup(path)
+    rewrite_zip(path, {"Song/song.xml": ("﻿" + xml).encode("utf-8")})
+    return {"signatures": [{"bar": t, "beat": b, "time_signature": "%d/%d" % (n, d)} for b, n, d, t in segs],
+            "backup": bak}

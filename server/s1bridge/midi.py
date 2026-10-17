@@ -30,6 +30,8 @@ CHANNEL = 15  # 0-based -> MIDI channel 16
 CC_RUN_JOBS = 119
 CC_PLAY = 118
 CC_STOP = 117
+CC_SAVE = 116
+CC_CLOSE = 115
 
 PORT_NAME = "AI Bridge"
 UNIQUE_ID = -148445216  # 0xF726E7E0, the ID the first installs bound in Studio One
