@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.7.0";
+const kBridgeVersion = "0.7.1";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -578,16 +578,50 @@ const kEventProps = ["name", "start", "length", "offset", "speed", "tune", "isMu
 function describeEvent (e, index)
 {
 	let d = probeProps (e, kEventProps);
+	for(let k in d)
+		if(d[k] === "undefined")
+			delete d[k];   // music parts have no speed/tune/trackID
 	d.index = index;
 	return d;
 }
 
+// Sorted by start; index stays the iterator position that call ({event}) and delete_event use.
 Ops.list_events = function (context, args)
 {
 	let track = findTrack (context, args.track);
 	if(!track)
 		return fail ("track not found: " + args.track);
-	return { track: track.name, events: trackEvents (track).map (describeEvent) };
+	return { track: track.name, events: trackEvents (track).map (describeEvent).sort ((a, b) => a.start - b.start) };
+};
+
+// Remove the event (part or audio clip) that starts at start_beats, or the one at index (list_events).
+// AudioFunctions/context.functions.removeEvent with executeImmediately (observed 0.6.0).
+Ops.delete_event = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	let events = trackEvents (track);
+	let hits = [];
+	if(args.index !== undefined)
+	{
+		if(events[args.index])
+			hits.push (events[args.index]);
+	}
+	else
+		hits = events.filter (e => Math.abs (e.start - args.start_beats) < 1e-6);
+	if(hits.length === 0)
+		return fail ("no event " + (args.index !== undefined ? "at index " + args.index : "starts at beat " + args.start_beats) +
+			" on " + track.name + "; events start at " + events.map (e => e.start).sort ((a, b) => a - b).join (", "));
+	if(hits.length > 1 && !args.all)
+		return fail (hits.length + " events start at beat " + args.start_beats + " on " + track.name + "; pass all=true or index");
+	let removed = hits.map (e => ({ name: e.name, start: e.start, length: e.length }));
+	let functions = context.functions;
+	functions.executeImmediately = true;
+	for(let e of hits)
+		functions.removeEvent (e);
+	functions.executeImmediately = false;
+	return { track: track.name, removed: removed, remaining: trackEvents (track).length };
 };
 
 // Notes of a part in time order. part.createSequenceIterator () (ExplodePitches.js); part.createIterator ()
@@ -851,22 +885,30 @@ function mixerChannelList (context)
 }
 
 // ref: index, channel name ("Channel03") or label ("St-1"). Name wins over label; type filters both.
-function findMixerChannel (context, ref, type)
+// Channel names repeat across channel types (AudioTrack Channel01 vs AudioSynth Channel01) and labels repeat
+// too (several instruments show "St-1"). accept (ch) narrows the candidates (e.g. has a volume parameter);
+// a ref that still matches more than one channel is an error.
+function findMixerChannel (context, ref, type, accept)
 {
 	let list = mixerChannelList (context);
 	if(typeof ref === "number")
 		return list[ref] || null;
-	let byLabel = null;
-	for(let ch of list)
-	{
+	let byName = [], byLabel = [];
+	list.forEach ((ch, i) => {
 		if(type && ch.channelType !== type)
-			continue;
+			return;
+		if(accept && !accept (ch))
+			return;
 		if(ch.name === ref)
-			return ch;
-		if(!byLabel && ch.label === ref)
-			byLabel = ch;
-	}
-	return byLabel;
+			byName.push (i);
+		else if(ch.label === ref)
+			byLabel.push (i);
+	});
+	let hits = byName.length ? byName : byLabel;
+	if(hits.length > 1)
+		return fail ("mixer channel '" + ref + "' is ambiguous: indexes " + hits.join (", ") +
+			" (" + hits.map (i => list[i].name + " " + list[i].channelType).join (", ") + "); pass the index from daw_list_mixer");
+	return hits.length ? list[hits[0]] : null;
 }
 
 Ops.list_mixer = function (context, args)
@@ -889,7 +931,9 @@ Ops.set_channel_param = function (context, args)
 	let via = null;
 	if(args.mixer_channel !== undefined)
 	{
-		target = findMixerChannel (context, args.mixer_channel, null);
+		target = findMixerChannel (context, args.mixer_channel, null, ch => !!ch.findParameter (args.param));
+		if(target && target.__error)
+			return target;
 		if(!target)
 			return fail ("mixer channel not found: " + args.mixer_channel);
 		via = "mixer_channel";
@@ -907,6 +951,8 @@ Ops.set_channel_param = function (context, args)
 		else if(args.instrument_channel)
 		{
 			target = findMixerChannel (context, args.instrument_channel, "AudioSynth");
+			if(target && target.__error)
+				return target;
 			via = "instrument_channel";
 		}
 		if(!target)
@@ -927,7 +973,9 @@ function resolveAudioChannel (context, args)
 {
 	if(args.mixer_channel !== undefined)
 	{
-		let ch = findMixerChannel (context, args.mixer_channel, null);
+		let ch = findMixerChannel (context, args.mixer_channel, null, ch => !!ch.inserts);
+		if(ch && ch.__error)
+			return ch;
 		return ch ? { channel: ch } : fail ("mixer channel not found: " + args.mixer_channel);
 	}
 	let track = findTrack (context, args.track);
@@ -938,6 +986,8 @@ function resolveAudioChannel (context, args)
 	if(args.instrument_channel)
 	{
 		let ch = findMixerChannel (context, args.instrument_channel, "AudioSynth");
+		if(ch && ch.__error)
+			return ch;
 		if(ch)
 			return { channel: ch };
 	}
@@ -958,7 +1008,9 @@ Ops.insert_effect = function (context, args)
 	let slot = fx.insertDevice (folder, args.class_id);
 	if(!slot)
 		return fail ("effect was not inserted: " + args.class_id);
-	return { channel: r.channel.name, label: r.channel.label, slot: probeProps (slot, ["name", "title"]) };
+	let out = { channel: r.channel.name, label: r.channel.label, slot: probeProps (slot, ["name", "title"]) };
+	try { let dev = slot.find ("Device"); if(dev) out.plugin = dev.name; } catch(e) {}
+	return out;
 };
 
 // Plug-in parameter access. Instruments: environment.find ("Synths").find (slot) (e.g. "Inst04").
@@ -1096,6 +1148,11 @@ Ops.insert_notes = function (context, args)
 	let track = findTrack (context, args.track);
 	if(!track)
 		return fail ("track not found: " + args.track);
+	// insertNewClip ("Music", ..) with an audio track puts the part on some other track (observed 0.7.0).
+	if(track.mediaType !== "Music")
+		return fail ("track '" + track.name + "' is not an instrument track (mediaType " + track.mediaType + ")");
+	if(!(args.length_beats > 0))
+		return fail ("length_beats must be > 0");
 	let start = mediaTime (functions, args.start_beats);
 	let end = mediaTime (functions, args.start_beats + args.length_beats);
 	functions.executeImmediately = true;
@@ -1103,6 +1160,8 @@ Ops.insert_notes = function (context, args)
 	functions.executeImmediately = false;
 	if(!part)
 		return fail ("part was not created");
+	if(!findPart (track, args.start_beats))
+		return fail ("part was created but not on " + track.name + "; check the song and undo");
 
 	let mf = functions.root.createFunctions ("MusicFunctions");
 	let count = 0;
@@ -1116,7 +1175,7 @@ Ops.insert_notes = function (context, args)
 		mf.moveEvent (note, n.start_beats);
 		count++;
 	}
-	return { track: track.name, notes: count };
+	return { track: track.name, part_start: part.start, notes: count };
 };
 
 Ops.dump_host = function (context, args)

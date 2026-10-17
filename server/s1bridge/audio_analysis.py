@@ -97,7 +97,9 @@ def analyze(path, start_sec=0.0, length_sec=None):
     fps = rate / on_hop
     ac = np.correlate(flux, flux, mode="full")[len(flux) - 1:]
     lo, hi = int(60 * fps / 180), int(60 * fps / 60) + 1
-    if ac[0] > 0 and hi < len(ac) - 1:
+    if len(x) < 6 * rate:
+        out["tempo_note"] = "too short for a tempo estimate (< 6 s)"  # a 2 s bounce gave 188.7 BPM, confidence < 0
+    elif ac[0] > 0 and hi < len(ac) - 1:
         best = lo + int(np.argmax(ac[lo:hi]))
         a, b, c = ac[best - 1], ac[best], ac[best + 1]
         shift = 0.5 * (a - c) / (a - 2 * b + c) if (a - 2 * b + c) != 0 else 0.0

@@ -196,11 +196,12 @@ class Song:
                 "parts": [],
             }
             if t["mixer"] is None and el.get("mediaType") == "Music":
-                # instrument tracks route to an AudioSynthChannel labelled like the track
+                # instrument tracks play through the instrument's AudioSynthChannel: follow the
+                # instrumentOut connection, else take the AudioSynthChannel labelled like the track
+                t["mixer"] = self.instrument_output_channel(el.get("name"))
                 for c in self._channels.values():
-                    if c["type"] == "AudioSynthChannel" and c["label"] == el.get("name"):
+                    if t["mixer"] is None and c["type"] == "AudioSynthChannel" and c["label"] == el.get("name"):
                         t["mixer"] = c
-                        break
             for lst in el.findall("List"):
                 if lst.get("xid") != "Events":
                     continue

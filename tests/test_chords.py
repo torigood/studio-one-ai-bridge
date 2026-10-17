@@ -39,6 +39,10 @@ class Chords(unittest.TestCase):
         self.assertEqual(self.chords.parse_chord("Bbmaj7"), (-2, (0, 4, 7, 11), None))
         self.assertEqual(self.chords.parse_chord("D#m7"), (9, (0, 3, 7, 10), None))  # observed in Studio One
         self.assertEqual(self.chords.parse_chord("C/E"), (0, (0, 4, 7), 4))
+        # names as daw_read_chords prints them
+        self.assertEqual(self.chords.parse_chord("F♯ø7/A"), (6, (0, 3, 6, 10), 3))
+        self.assertEqual(self.chords.parse_chord("B♭maj7"), (-2, (0, 4, 7, 11), None))
+        self.assertEqual(self.chords.parse_chord("C°7"), (0, (0, 3, 6, 9), None))
         with self.assertRaises(ValueError):
             self.chords.parse_chord("H7")
 

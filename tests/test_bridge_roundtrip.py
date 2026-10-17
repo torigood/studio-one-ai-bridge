@@ -101,6 +101,28 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(t["after"]["primaryTime"], "0001.01.01.00")
         self.assertIn(["transport", "tempo", 128], calls)
 
+    def test_guards_and_delete(self):
+        audio = self.mb.enqueue("insert_notes", {"track": "Vox", "start_beats": 4, "length_beats": 4,
+                                                 "notes": [{"pitch": 60, "start_beats": 0, "length_beats": 1}]})
+        ambiguous = self.mb.enqueue("set_channel_param", {"mixer_channel": "St-1", "param": "volume", "value": 1})
+        by_index = self.mb.enqueue("set_channel_param", {"mixer_channel": 1, "param": "volume", "value": 0.5})
+        # Channel03 is both an AudioSynth and a MusicTrack channel; only the AudioSynth one has volume
+        by_name = self.mb.enqueue("set_channel_param", {"mixer_channel": "Channel03", "param": "volume", "value": 0.7})
+        events = self.mb.enqueue("list_events", {"track": "Piano"})
+        delete = self.mb.enqueue("delete_event", {"track": "Piano", "start_beats": 0})
+        missing = self.mb.enqueue("delete_event", {"track": "Piano", "start_beats": 99})
+        calls = self.run_bridge()
+        self.assertIn("not an instrument track", self.mb.result(audio)["error"])
+        self.assertFalse(any(c[0] == "insertNewClip" for c in calls))
+        self.assertIn("ambiguous", self.mb.result(ambiguous)["error"])
+        self.assertEqual(self.mb.result(by_index)["result"]["channel"], "Channel03")
+        self.assertEqual(self.mb.result(by_name)["result"]["channelType"], "AudioSynth")
+        ev = self.mb.result(events)["result"]["events"][0]
+        self.assertNotIn("speed", ev)  # music parts: no "undefined" strings
+        self.assertEqual(self.mb.result(delete)["result"]["remaining"], 0)
+        self.assertIn(["removeEvent", "Piano", 0], calls)
+        self.assertIn("events start at", self.mb.result(missing)["error"])
+
     def test_jobs_not_rerun(self):
         job = self.mb.enqueue("add_track", {"type": "folder", "name": "Once"})
         self.run_bridge()

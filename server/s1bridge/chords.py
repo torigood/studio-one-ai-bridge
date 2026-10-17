@@ -38,9 +38,17 @@ QUALITIES = {
 }
 
 
+# Studio One prints chord names with these symbols (daw_read_chords: "F♯ø7", "B♭maj7"); accept them as input.
+_SYMBOLS = [("♯", "#"), ("♭", "b"), ("ø7", "m7b5"), ("ø", "m7b5"), ("°7", "dim7"), ("°", "dim"),
+            ("Δ7", "maj7"), ("Δ", "maj7")]
+
+
 def parse_chord(name):
     """'F#m7' -> (6, (0, 3, 7, 10), None); 'C/E' -> (0, (0, 4, 7), 4). Roots/basses on the circle of fifths."""
-    m = re.fullmatch(r"\s*([A-G][#b]?)([^/\s]*)(?:/([A-G][#b]?))?\s*", name or "")
+    name = name or ""
+    for sym, ascii_ in _SYMBOLS:
+        name = name.replace(sym, ascii_)
+    m = re.fullmatch(r"\s*([A-G][#b]?)([^/\s]*)(?:/([A-G][#b]?))?\s*", name)
     if not m or m.group(2) not in QUALITIES:
         raise SongWriteError("unknown chord %r; qualities: %s" % (name, ", ".join(q for q in QUALITIES if q)))
     return note_fifths(m.group(1)), QUALITIES[m.group(2)], note_fifths(m.group(3)) if m.group(3) else None

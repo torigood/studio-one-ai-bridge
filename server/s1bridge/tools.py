@@ -123,7 +123,8 @@ TOOLS = [
          ["path", "signatures"])},
     {"name": "song_write_chords",
      "description": "Write chords into the Chord Track of a saved .song: [{beat, length, chord}] with beat/length in "
-                    "quarter notes and chord names like C, Am7, F#m7b5, Gsus4, Bbmaj7, Dadd9 (slash basses are ignored). "
+                    "quarter notes and chord names like C, Am7, F#m7b5, Gsus4, Bbmaj7, Dadd9, C/E (slash bass). Names as "
+                    "daw_read_chords prints them (F♯ø7, B♭maj7, C°7) are accepted too. "
                     "replace (default true) removes old chords overlapping the written range. If the song is open "
                     "it is saved, closed, written and reopened automatically. The song needs a Chord Track.",
      "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
@@ -179,9 +180,16 @@ TOOLS = [
                              "path": {"type": "array"}, "names": {"type": "array", "items": _S},
                              "wait": _WAIT}, ["root"])},
     {"name": "daw_list_events",
-     "description": "Events (parts/audio clips) on a track of the open song, in order: index, name, start, "
-                    "length, offset, speed. index is what daw_call's {event: {track, index}} refers to.",
+     "description": "Events (parts/audio clips) on a track of the open song, sorted by start: index, name, start, "
+                    "length, offset (audio: speed, tune). index is what daw_call's {event: {track, index}} and "
+                    "daw_delete_event refer to (not the sorted position).",
      "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
+    {"name": "daw_delete_event",
+     "description": "Delete the event (instrument part or audio clip) that starts at start_beats on a track of the "
+                    "open song, or the one at index (daw_list_events). all=true deletes every event starting there. "
+                    "Undoable with Edit/Undo.",
+     "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "index": _I, "all": {"type": "boolean"},
+                             "wait": _WAIT}, ["track"])},
     {"name": "daw_read_notes",
      "description": "Notes of the instrument parts on a track of the open song (live, no save needed). Per part: "
                     "start/length (beats), notes with index, pitch, velocity 0..1, start/length relative to the part, "
@@ -298,8 +306,10 @@ class ToolError(Exception):
 
 def _song_path(path):
     path = os.path.expanduser(path)
-    if not path.endswith(".song") or not os.path.isfile(path):
+    if not path.endswith(".song"):
         raise ToolError("not a .song file: %s" % path)
+    if not os.path.isfile(path):
+        raise ToolError("song not found: %s (see song_list)" % path)
     return path
 
 
@@ -310,23 +320,23 @@ def _find_track(tracks, ref):
     raise ToolError("track not found: %r" % (ref,))
 
 
-def _instrument_channel_hint(track):
-    """AudioSynth channel name ("Channel03") for an instrument track, from the newest saved song
-    that has a track with this label. None if not found (unsaved song or not an instrument track)."""
-    if not isinstance(track, str):
+def _instrument_channel_hint(track, wait=None):
+    """AudioSynth channel name ("Channel03") for an instrument track of the open song, read from that song's
+    saved file (the live API has no track -> instrument channel link). None if the song or track is unsaved."""
+    path = _active_song_path(wait)
+    if not path:
         return None
-    songs = sorted(glob.glob(os.path.join(SONGS_ROOT, "**", "*.song"), recursive=True),
-                   key=os.path.getmtime, reverse=True)
-    songs = [p for p in songs if os.sep + "History" + os.sep not in p]
-    for path in songs[:10]:
-        try:
-            with Song(path) as s:
-                ch = s.instrument_output_channel(track)
-        except Exception:
-            continue
-        if ch and ch.get("name"):
-            return ch["name"]
-    return None
+    if not isinstance(track, str):
+        tracks = _bridge("list_tracks", {}, wait).get("tracks", [])
+        track = next((t["name"] for t in tracks if t["index"] == track), None)
+        if track is None:
+            return None
+    try:
+        with Song(path) as s:
+            ch = s.instrument_output_channel(track)
+    except Exception:
+        return None
+    return ch.get("name") if ch else None
 
 
 # Directory that contains the s1bridge package (server/ in a checkout, site-packages when installed)
@@ -418,20 +428,32 @@ def _trigger():
         return str(e)
 
 
-def _open_in_daw(path):
-    """True if Studio One's active document is this song, None if the bridge did not answer."""
+def _active_song_path(wait=None):
+    """File path of the song open in Studio One (DocumentManager.activeDocument.path.url), None if unknown
+    (no song open, not saved yet, or the bridge did not answer)."""
     if not os.path.isfile(os.path.join(Mailbox().root, "status.json")):
         return None
     try:
         r = _bridge("probe", {"root": "object", "url": "://studioapp/DocumentManager",
-                              "path": ["activeDocument"], "names": ["title"]}, 4)
+                              "path": ["activeDocument", "path"], "names": ["url"]}, min(wait or 4, 4))
     except ToolError:
         return None
     if isinstance(r, dict) and r.get("status") == "queued":
         Mailbox().cancel(r["job_id"])  # no song open (Run Jobs needs one)
         return None
-    title =(r.get("names") or {}).get("title") if isinstance(r, dict) else None
-    return title == os.path.splitext(os.path.basename(path))[0] if title else None
+    url = (r.get("names") or {}).get("url") if isinstance(r, dict) else None
+    if not url or not url.startswith("file://"):
+        return None
+    p = urllib.parse.unquote(url[len("file://"):])
+    return p if os.path.isfile(p) else None
+
+
+def _open_in_daw(path):
+    """True if Studio One's active document is this song, None if the bridge did not answer."""
+    active = _active_song_path()
+    if active is None:
+        return None
+    return os.path.realpath(active) == os.path.realpath(path)
 
 
 def _bridge(op, args, wait):
@@ -708,6 +730,10 @@ def call(name, a):
         return _bridge("probe", {k: a[k] for k in ("root", "track", "list", "index", "path", "names", "url") if k in a}, wait)
     if name == "daw_list_events":
         return _bridge("list_events", {"track": a["track"]}, wait)
+    if name == "daw_delete_event":
+        if "start_beats" not in a and "index" not in a:
+            raise ToolError("pass start_beats or index")
+        return _bridge("delete_event", {k: a[k] for k in ("track", "start_beats", "index", "all") if k in a}, wait)
     if name == "daw_read_notes":
         return _bridge("read_notes", {k: a[k] for k in ("track", "part_start") if k in a}, wait)
     if name == "daw_edit_notes":
@@ -736,7 +762,7 @@ def call(name, a):
         if "mixer_channel" not in args:
             if "track" not in args:
                 raise ToolError("pass track or mixer_channel")
-            hint = _instrument_channel_hint(args["track"])
+            hint = _instrument_channel_hint(args["track"], wait)
             if hint:
                 args["instrument_channel"] = hint
         return _bridge("set_channel_param", args, wait)
@@ -746,7 +772,7 @@ def call(name, a):
         args = {k: a[k] for k in ("instrument_slot", "track", "mixer_channel", "slot", "prefix", "from", "to", "limit")
                 if k in a}
         if "track" in args and "mixer_channel" not in args:
-            hint = _instrument_channel_hint(args["track"])
+            hint = _instrument_channel_hint(args["track"], wait)
             if hint:
                 args["instrument_channel"] = hint
         return _bridge("scan_params", args, wait or 30)
@@ -757,7 +783,7 @@ def call(name, a):
         if name == "daw_plugin_param" and a.get("plugin") and not args["param"].startswith("vstp"):
             args["param"] = _vst3_param_name(a["plugin"], args["param"])
         if "track" in args and "mixer_channel" not in args:
-            hint = _instrument_channel_hint(args["track"])
+            hint = _instrument_channel_hint(args["track"], wait)
             if hint:
                 args["instrument_channel"] = hint
         return _bridge("insert_effect" if name == "daw_insert_effect" else "plugin_param", args, wait)

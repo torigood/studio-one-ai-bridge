@@ -23,14 +23,16 @@ class Url {
 	getName (withExt) { const b = path.basename(this.p); return withExt ? b : b.replace(/\.[^.]*$/, ""); }
 }
 
+function makePart (name, start, length, notes) {
+	return { name, start, length, mediaType: "Music", notes,
+		createSequenceIterator: () => { const l = notes.slice().sort((a, b) => a.start - b.start); let i = 0; return { done: () => i >= l.length, next: () => l[i++] }; } };
+}
+
 function makeTrack (name, mediaType) {
 	const params = {};
-	const events = [{ name: name + " 1", start: 0, length: 8, mediaType }];
-	if (mediaType === "Music") {
-		const notes = [{ pitch: 60, velocity: 0.8, start: 0, length: 1 }, { pitch: 64, velocity: 0.7, start: 1, length: 1 }];
-		events[0].notes = notes;
-		events[0].createSequenceIterator = () => { const l = notes.slice().sort((a, b) => a.start - b.start); let i = 0; return { done: () => i >= l.length, next: () => l[i++] }; };
-	}
+	const events = [mediaType === "Music"
+		? makePart(name + " 1", 0, 8, [{ pitch: 60, velocity: 0.8, start: 0, length: 1 }, { pitch: 64, velocity: 0.7, start: 1, length: 1 }])
+		: { name: name + " 1", start: 0, length: 8, mediaType, speed: 1 }];
 	return {
 		name, mediaType, color: "FF000000", events,
 		createIterator: () => { let i = 0; return { done: () => i >= events.length, next: () => events[i++] }; },
@@ -49,15 +51,31 @@ const transportPanel = { findParameter: (n) => (n in tparams ? {
 	setValue (v) { tparams[n] = v; calls.push(["transport", n, v]); },
 	fromString (v) { tparams[n] = v; calls.push(["transport", n, v]); } } : null) };
 
+function makeChannel (name, label, channelType, hasVolume) {
+	const params = {};
+	return { name, label, channelType, inserts: hasVolume ? {} : undefined,
+		findParameter: (n) => (hasVolume || n !== "volume" ? (params[n] = params[n] || { value: 0,
+			setValue (v) { this.value = v; calls.push(["setValue", label, n, v]); } }) : null) };
+}
+const mixerChannels = [makeChannel("Channel02", "St-1", "AudioSynth", true), makeChannel("Channel03", "St-1", "AudioSynth", true),
+	makeChannel("Channel01", "Vox", "AudioTrack", true), makeChannel("Channel03", "Piano", "MusicTrack", false)];
+const mixerConsole = { getChannelList: () => ({ numChannels: mixerChannels.length, getChannel: (i) => mixerChannels[i] }) };
+
 const functions = {
 	executeImmediately: false,
 	newMediaTime: () => ({ musical: 0 }),
 	addMediaTrack: (i, n, f) => { const t = makeTrack(n, f === "Instrument" ? "Music" : "Audio"); tracks.splice(i, 0, t); return t; },
 	addTrack: (type, i, n) => { const t = makeTrack(n, type); tracks.splice(i, 0, t); return t; },
 	addEventOnTrack: (t, e, s) => { const c = Object.assign({}, e, { start: s.musical }); t.events.push(c); calls.push(["addEventOnTrack", t.name, e.name, s.musical]); return c; },
-	insertNewClip: (kind, s, e, t) => { calls.push(["insertNewClip", kind, s.musical, e.musical, t.name]); return { kind }; },
+	insertNewClip: (kind, s, e, t) => {
+		calls.push(["insertNewClip", kind, s.musical, e.musical, t.name]);
+		const p = makePart(t.name, s.musical, e.musical - s.musical, []);
+		t.events.push(p);
+		return p;
+	},
+	removeEvent: (e) => { for (const t of tracks) { const i = t.events.indexOf(e); if (i >= 0) { t.events.splice(i, 1); calls.push(["removeEvent", t.name, e.start]); } } return true; },
 	root: {
-		environment: { find: (n) => (n === "TransportPanel" ? transportPanel : null) },
+		environment: { find: (n) => (n === "TransportPanel" ? transportPanel : n === "MixerConsole" ? mixerConsole : null) },
 		timeContext: { getTimeSignature: () => ({ numerator: 4, denominator: 4 }), ppqToSeconds: (b) => b * 0.5 },
 		createFunctions: () => ({
 			createEvent: () => ({ velocity: 0, start: 0, length: 0 }),
