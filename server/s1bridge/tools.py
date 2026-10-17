@@ -17,6 +17,7 @@ from . import vst3params
 from . import songwrite
 from . import loops
 from . import chords
+from . import effects
 import time
 from .keys import key_from_notes
 import subprocess
@@ -184,6 +185,15 @@ TOOLS = [
                     "length, offset (audio: speed, tune). index is what daw_call's {event: {track, index}} and "
                     "daw_delete_event refer to (not the sorted position).",
      "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
+    {"name": "daw_edit_event",
+     "description": "Move (move_to = new start in beats), resize (length in beats) or mute/unmute an event "
+                    "(instrument part or audio clip) on a track of the open song, picked by start_beats or index "
+                    "(daw_list_events). Notes inside a part move with it.",
+     "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "index": _I, "move_to": _N, "length": _N,
+                             "mute": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
+    {"name": "daw_delete_track",
+     "description": "Delete a track of the open song (undoable with Edit/Undo). An instrument it used stays loaded.",
+     "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
     {"name": "daw_delete_event",
      "description": "Delete the event (instrument part or audio clip) that starts at start_beats on a track of the "
                     "open song, or the one at index (daw_list_events). all=true deletes every event starting there. "
@@ -278,6 +288,22 @@ TOOLS = [
                     "prefix+N (default vstp0..vstp1000). Same slot arguments as daw_plugin_param. EXPERIMENTAL.",
      "inputSchema": _schema({"instrument_slot": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "slot": _S, "prefix": _S, "from": _I, "to": _I, "limit": _I, "wait": _WAIT})},
+    {"name": "daw_list_effects",
+     "description": "Insert effects on a track's channel (instrument tracks: their instrument output channel) or a "
+                    "mixer channel of the open song: slot, plug-in, bypass.",
+     "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]}, "wait": _WAIT})},
+    {"name": "daw_bypass_effect",
+     "description": "Bypass (bypass=true) or re-enable an insert effect live (slot from daw_list_effects). The "
+                    "effect stays in the chain; song_remove_effect takes it out.",
+     "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]}, "slot": _S,
+                             "bypass": {"type": "boolean"}, "wait": _WAIT}, ["slot"])},
+    {"name": "song_remove_effect",
+     "description": "Remove an insert effect from a track's channel (instrument tracks: their instrument output "
+                    "channel) or a mixer channel of a saved .song, by slot (FX02, from daw_list_effects) or plug-in "
+                    "name. Studio One's script API cannot remove devices, so if the song is open it is saved, closed, "
+                    "edited and reopened automatically (undo history is lost). The original file is backed up first.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK, "mixer_channel": _S, "slot": _S, "plugin": _S},
+                            ["path"])},
     {"name": "daw_list_instruments",
      "description": "Instrument slots in the open song (e.g. Inst01) and the plug-in in each, for daw_plugin_param.",
      "inputSchema": _schema({"wait": _WAIT})},
@@ -659,6 +685,11 @@ def call(name, a):
             p, a["track"], a["loop"], a["start_beats"], a.get("length_beats")))
     if name == "song_set_time_signatures":
         return _offline_edit(_song_path(a["path"]), lambda p: songwrite.write_time_signatures(p, a["signatures"]))
+    if name == "song_remove_effect":
+        if ("track" in a) == ("mixer_channel" in a):
+            raise ToolError("pass track or mixer_channel")
+        return _offline_edit(_song_path(a["path"]), lambda p: effects.remove_effect(
+            p, a.get("track"), a.get("mixer_channel"), a.get("slot"), a.get("plugin")))
     if name == "song_write_chords":
         return _offline_edit(_song_path(a["path"]), lambda p: chords.write_chords(p, a["chords"], a.get("replace", True)))
 
@@ -730,6 +761,13 @@ def call(name, a):
         return _bridge("probe", {k: a[k] for k in ("root", "track", "list", "index", "path", "names", "url") if k in a}, wait)
     if name == "daw_list_events":
         return _bridge("list_events", {"track": a["track"]}, wait)
+    if name == "daw_edit_event":
+        if "start_beats" not in a and "index" not in a:
+            raise ToolError("pass start_beats or index")
+        args = {k: a[k] for k in ("track", "start_beats", "index", "move_to", "length", "mute") if k in a}
+        return _bridge("edit_event", args, wait)
+    if name == "daw_delete_track":
+        return _bridge("delete_track", {"track": a["track"]}, wait)
     if name == "daw_delete_event":
         if "start_beats" not in a and "index" not in a:
             raise ToolError("pass start_beats or index")
@@ -789,6 +827,19 @@ def call(name, a):
         return _bridge("insert_effect" if name == "daw_insert_effect" else "plugin_param", args, wait)
     if name == "daw_list_instruments":
         return _bridge("list_instruments", {}, wait)
+    if name in ("daw_list_effects", "daw_bypass_effect"):
+        args = {k: a[k] for k in ("track", "mixer_channel") if k in a}
+        if not args:
+            raise ToolError("pass track or mixer_channel")
+        if "track" in args:
+            hint = _instrument_channel_hint(args["track"], wait)
+            if hint:
+                args["instrument_channel"] = hint
+        if name == "daw_list_effects":
+            return _bridge("list_effects", args, wait)
+        args.update(slot=a["slot"], param="bypass", value=1 if a.get("bypass", True) else 0)
+        r = _bridge("plugin_param", args, wait)
+        return {"slot": a["slot"], "bypass": r.get("raw")} if isinstance(r, dict) and "raw" in r else r
     if name == "daw_insert_notes":
         return _bridge("insert_notes", {k: a[k] for k in ("track", "start_beats", "length_beats", "notes")}, wait)
     if name == "daw_transport":

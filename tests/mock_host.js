@@ -73,6 +73,10 @@ const functions = {
 		t.events.push(p);
 		return p;
 	},
+	removeTrack: (t) => { const i = tracks.indexOf(t); if (i >= 0) tracks.splice(i, 1); calls.push(["removeTrack", t.name]); return true; },
+	moveEvent: (e, b) => { e.start = b; calls.push(["moveEvent", b]); return true; },
+	resizeEvent: (e, s, o, l) => { e.start = s; e.offset = o || 0; e.length = l || 0; calls.push(["resizeEvent", s, o, l]); return true; },
+	muteEvent: (e, m) => { e.isMuted = m ? 1 : 0; return true; },
 	removeEvent: (e) => { for (const t of tracks) { const i = t.events.indexOf(e); if (i >= 0) { t.events.splice(i, 1); calls.push(["removeEvent", t.name, e.start]); } } return true; },
 	root: {
 		environment: { find: (n) => (n === "TransportPanel" ? transportPanel : n === "MixerConsole" ? mixerConsole : null) },
@@ -91,7 +95,7 @@ const functions = {
 
 const context = {
 	functions,
-	mainTrackList: { get numTracks () { return tracks.length; }, getTrack: (i) => tracks[i], getInsertPosition: () => tracks.length },
+	mainTrackList: { get numTracks () { return tracks.length; }, getTrack: (i) => tracks[i], getInsertPosition: () => tracks.length + 3 },
 };
 
 const Host = {

@@ -47,10 +47,12 @@ def _lane_title(song, identity, cc):
 
 
 def rewrite_zip(path, members):
-    """Replace ZIP entries {name: bytes}; every other entry is copied as is."""
+    """Replace ZIP entries {name: bytes}, None drops the entry; every other entry is copied as is."""
     tmp = path + ".aibridge-tmp"
     with zipfile.ZipFile(path) as src, zipfile.ZipFile(tmp, "w") as dst:
         for info in src.infolist():
+            if info.filename in members and members[info.filename] is None:
+                continue
             raw = members[info.filename] if info.filename in members else src.read(info.filename)
             dst.writestr(info, raw, compress_type=info.compress_type)
     os.replace(tmp, path)

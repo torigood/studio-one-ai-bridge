@@ -123,6 +123,18 @@ class RoundTrip(unittest.TestCase):
         self.assertIn(["removeEvent", "Piano", 0], calls)
         self.assertIn("events start at", self.mb.result(missing)["error"])
 
+    def test_track_and_event_edits(self):
+        add = self.mb.enqueue("add_track", {"type": "instrument", "name": "Bass"})
+        edit = self.mb.enqueue("edit_event", {"track": "Vox", "start_beats": 0, "move_to": 4, "length": 2, "mute": True})
+        bad = self.mb.enqueue("edit_event", {"track": "Vox", "start_beats": 3})
+        delete = self.mb.enqueue("delete_track", {"track": "Bass"})
+        self.run_bridge()
+        self.assertEqual(self.mb.result(add)["result"]["created"]["index"], 2)  # real index, not getInsertPosition
+        ev = self.mb.result(edit)["result"]["event"]
+        self.assertEqual((ev["start"], ev["length"], ev["isMuted"]), (4, 2, 1))
+        self.assertIn("events start at", self.mb.result(bad)["error"])
+        self.assertEqual(self.mb.result(delete)["result"]["tracks"], 2)
+
     def test_jobs_not_rerun(self):
         job = self.mb.enqueue("add_track", {"type": "folder", "name": "Once"})
         self.run_bridge()

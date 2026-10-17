@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.7.1";
+const kBridgeVersion = "0.7.2";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -320,7 +320,31 @@ function createTrack (context, args)
 	functions.executeImmediately = false;
 	if(!track)
 		return fail ("track was not created");
+	// getInsertPosition () is not the final index (returned 8 for a new 6th track, observed 0.7.1)
+	let list = context.mainTrackList;
+	for(let i = 0; i < list.numTracks; i++)
+		if(list.getTrack (i) === track)
+			index = i;
+	if(index >= list.numTracks)
+		for(let i = list.numTracks - 1; i >= 0; i--)
+			if(list.getTrack (i).name === track.name) { index = i; break; }
 	return { track: track, index: index };
+};
+
+// context.functions.removeTrack (track) with executeImmediately (observed 0.6.0). Undoable.
+Ops.delete_track = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	let info = trackInfo (track, null);
+	let functions = context.functions;
+	functions.executeImmediately = true;
+	functions.removeTrack (track);
+	functions.executeImmediately = false;
+	if(findTrack (context, info.name) === track)
+		return fail ("track was not removed: " + info.name);
+	return { removed: info.name, mediaType: info.mediaType, tracks: context.mainTrackList.numTracks };
 };
 
 Ops.add_track = function (context, args)
@@ -592,6 +616,34 @@ Ops.list_events = function (context, args)
 	if(!track)
 		return fail ("track not found: " + args.track);
 	return { track: track.name, events: trackEvents (track).map (describeEvent).sort ((a, b) => a.start - b.start) };
+};
+
+// Move, resize or mute the event that starts at start_beats (or at index). context.functions with
+// executeImmediately: moveEvent (e, beats) sets the absolute start; resizeEvent (e, start, offset, length)
+// takes all three in beats (fewer args zero the rest); muteEvent (e, state) (observed 0.6.0).
+Ops.edit_event = function (context, args)
+{
+	let track = findTrack (context, args.track);
+	if(!track)
+		return fail ("track not found: " + args.track);
+	let events = trackEvents (track);
+	let e = args.index !== undefined ? events[args.index]
+		: events.filter (x => Math.abs (x.start - args.start_beats) < 1e-6)[0];
+	if(!e)
+		return fail ("no event " + (args.index !== undefined ? "at index " + args.index : "starts at beat " + args.start_beats) +
+			" on " + track.name + "; events start at " + events.map (x => x.start).sort ((a, b) => a - b).join (", "));
+	if(args.length !== undefined && !(args.length > 0))
+		return fail ("length must be > 0");
+	let functions = context.functions;
+	functions.executeImmediately = true;
+	if(args.move_to !== undefined)
+		functions.moveEvent (e, args.move_to);
+	if(args.length !== undefined)
+		functions.resizeEvent (e, e.start, e.offset, args.length);
+	if(args.mute !== undefined)
+		functions.muteEvent (e, !!args.mute);
+	functions.executeImmediately = false;
+	return { track: track.name, event: describeEvent (e, events.indexOf (e)) };
 };
 
 // Remove the event (part or audio clip) that starts at start_beats, or the one at index (list_events).
@@ -1011,6 +1063,29 @@ Ops.insert_effect = function (context, args)
 	let out = { channel: r.channel.name, label: r.channel.label, slot: probeProps (slot, ["name", "title"]) };
 	try { let dev = slot.find ("Device"); if(dev) out.plugin = dev.name; } catch(e) {}
 	return out;
+};
+
+// Insert slots of a channel: the Inserts folder has numChildren but no enumerator, and slot names are
+// "FX01".. by insertion order with gaps after a removal, so names are probed (observed 0.7.1).
+Ops.list_effects = function (context, args)
+{
+	let r = resolveAudioChannel (context, args);
+	if(r.__error)
+		return r;
+	let folder = r.channel.inserts;
+	let out = [];
+	for(let i = 1; folder && i <= 32; i++)
+	{
+		let name = "FX" + (i < 10 ? "0" : "") + i;
+		let slot = folder.find (name);
+		if(!slot)
+			continue;
+		let item = { slot: name };
+		try { let dev = slot.find ("Device"); item.plugin = dev ? dev.name : null; } catch(e) {}
+		try { let b = slot.findParameter ("bypass"); if(b) item.bypass = b.value ? 1 : 0; } catch(e) {}
+		out.push (item);
+	}
+	return { channel: r.channel.name, label: r.channel.label, channelType: r.channel.channelType, effects: out };
 };
 
 // Plug-in parameter access. Instruments: environment.find ("Synths").find (slot) (e.g. "Inst04").
