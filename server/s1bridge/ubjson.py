@@ -107,3 +107,38 @@ class _Reader:
 def loads(data):
     r = _Reader(data)
     return r.value(r.marker())
+
+
+def _int(v):
+    for m, fmt, lo, hi in ((b"i", ">b", -128, 127), (b"U", ">B", 128, 255), (b"I", ">h", -32768, 32767),
+                           (b"l", ">i", -2 ** 31, 2 ** 31 - 1)):
+        if lo <= v <= hi:
+            return m + struct.pack(fmt, v)
+    return b"L" + struct.pack(">q", v)
+
+
+def _str(s):
+    b = s.encode("utf-8")
+    return _int(len(b)) + b
+
+
+def dumps(v):
+    """Encode the way Studio One writes .musicx: smallest int marker, floats as float64 ('D'),
+    strings 'S', unsized containers, object keys without a marker."""
+    if v is None:
+        return b"Z"
+    if v is True:
+        return b"T"
+    if v is False:
+        return b"F"
+    if isinstance(v, int):
+        return _int(v)
+    if isinstance(v, float):
+        return b"D" + struct.pack(">d", v)
+    if isinstance(v, str):
+        return b"S" + _str(v)
+    if isinstance(v, (list, tuple)):
+        return b"[" + b"".join(dumps(x) for x in v) + b"]"
+    if isinstance(v, dict):
+        return b"{" + b"".join(_str(k) + dumps(x) for k, x in v.items()) + b"}"
+    raise UBJSONError("cannot encode %r" % type(v))

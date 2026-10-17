@@ -14,6 +14,7 @@ from .mailbox import Mailbox
 from .song import Song
 from . import library
 from . import vst3params
+from . import songwrite
 from .keys import key_from_notes
 import subprocess
 import urllib.parse
@@ -91,6 +92,18 @@ TOOLS = [
      "description": "Notes of one track in a saved .song. Positions are quarter notes from song start; "
                     "pitch is MIDI number; velocity 0..1.",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK}, ["path", "track"])},
+    {"name": "song_write_cc",
+     "description": "Write MIDI CC points (e.g. 1 modulation, 11 expression, 64 sustain) into an instrument part of a "
+                    "saved .song. The song must be CLOSED in Studio One (save, File > Close, then reopen it after "
+                    "this). beat = quarter notes from song start, value 0..127; points are joined by ramps unless "
+                    "step is true. The part is the one containing the first point unless part (0-based) is given. "
+                    "replace (default true) drops the lane's old points between the first and last new point. "
+                    "The original file is backed up first.",
+     "inputSchema": _schema({
+         "path": _SONG, "track": _TRACK, "cc": _I, "part": _I,
+         "points": {"type": "array", "items": _schema({"beat": _N, "value": _N}, ["beat", "value"])},
+         "replace": {"type": "boolean"}, "step": {"type": "boolean"}},
+         ["path", "track", "cc", "points"])},
     {"name": "audio_analyze",
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
@@ -323,6 +336,22 @@ def _trigger():
         return str(e)
 
 
+def _open_in_daw(path):
+    """True if Studio One's active document is this song, None if the bridge did not answer."""
+    if not os.path.isfile(os.path.join(Mailbox().root, "status.json")):
+        return None
+    try:
+        r = _bridge("probe", {"root": "object", "url": "://studioapp/DocumentManager",
+                              "path": ["activeDocument"], "names": ["title"]}, 4)
+    except ToolError:
+        return None
+    if isinstance(r, dict) and r.get("status") == "queued":
+        Mailbox().cancel(r["job_id"])  # no song open (Run Jobs needs one)
+        return None
+    title =(r.get("names") or {}).get("title") if isinstance(r, dict) else None
+    return title == os.path.splitext(os.path.basename(path))[0] if title else None
+
+
 def _bridge(op, args, wait):
     mb = Mailbox()
     job_id = mb.enqueue(op, args)
@@ -376,6 +405,17 @@ def call(name, a):
             notes = sorted((n for p in t["parts"] for n in p.get("notes", [])), key=lambda n: n["start_beats"])
             return {"track": t["name"], "parts": [{k: v for k, v in p.items() if k != "notes"} for p in t["parts"]],
                     "notes": notes}
+
+    if name == "song_write_cc":
+        path = _song_path(a["path"])
+        if _open_in_daw(path):
+            raise ToolError("the song is open in Studio One; save it, close it (File > Close), "
+                            "then call again and reopen it afterwards")
+        try:
+            return songwrite.write_cc(path, a["track"], a["cc"], a["points"], a.get("part"),
+                                      a.get("replace", True), a.get("step", False))
+        except songwrite.SongWriteError as e:
+            raise ToolError(str(e))
 
     if name == "audio_analyze":
         return _audio_analyze(a["path"], a.get("start_sec", 0), a.get("length_sec"))

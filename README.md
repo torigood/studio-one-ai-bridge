@@ -25,7 +25,8 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
 ```
 
 - **Offline tools** (`song_*`, `library_*`, `audio_analyze`) need only Python. They read saved
-  `.song` files, the plug-in list and Sound Set file names. They never write.
+  `.song` files, the plug-in list and Sound Set file names. They never write, except
+  `song_write_cc` (Studio One's scripting API cannot create CC).
 - **Live tools** (`daw_*`) need the AI Bridge extension installed in Studio One. The server
   drops a job file in a mailbox folder and presses a virtual MIDI button; a small control
   surface maps that button to the extension's "Run Jobs" command, which runs the job in the open
@@ -156,6 +157,7 @@ Then remove the device under Options → External Devices.
 | `song_summary` | Tempo, markers, tracks, parts, mixer state of a saved song |
 | `song_track_notes` | Notes of one track in a saved song |
 | `song_analyze` | Key/range per track plus audio analysis, for arranging |
+| `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. The song must be closed in Studio One; the original is backed up first. The only tool that writes a file. |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |
