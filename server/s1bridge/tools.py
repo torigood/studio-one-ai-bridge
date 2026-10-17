@@ -13,6 +13,7 @@ from . import midi
 from .mailbox import Mailbox
 from .song import Song
 from . import library
+from . import vst3params
 from .keys import key_from_notes
 import subprocess
 import urllib.parse
@@ -77,10 +78,11 @@ TOOLS = [
                     "Use class_id with daw_insert_effect.",
      "inputSchema": _schema({})},
     {"name": "library_plugin_params",
-     "description": "Parameter IDs of a Studio One native plug-in (effects like Pro EQ, Room Reverb, Compressor; "
-                    "instruments like Mojito) with the value range seen in its factory presets, plus preset names. "
-                    "Values are in the plug-in's own units (Hz, dB, 0..1). Third-party (VST/AU) plug-ins are not covered.",
-     "inputSchema": _schema({"plugin": _S}, ["plugin"])},
+     "description": "Parameters of a plug-in for daw_plugin_param. Studio One native plug-ins (Pro EQ, Room Reverb, "
+                    "Mojito, ...): IDs and value ranges from factory presets, plus preset names. Third-party VST3 "
+                    "(Vital, Surge XT, BBC Symphony Orchestra, ...): 'vstp<id>' names with titles, filtered by query "
+                    "words (e.g. 'filter 1 cutoff'); needs the dump from python3 -m s1bridge.vst3params.",
+     "inputSchema": _schema({"plugin": _S, "query": _S, "limit": _I}, ["plugin"])},
     {"name": "song_summary",
      "description": "Read a saved .song: tempo, time signature, markers, tracks with folder, "
                     "part/note counts and mixer state (volume dB, pan -1..1, mute, inserts). Read-only.",
@@ -161,16 +163,21 @@ TOOLS = [
     {"name": "daw_plugin_param",
      "description": "Read or set a plug-in parameter. Instrument: instrument_slot (e.g. 'Inst04' from "
                     "daw_add_instrument). Effect: track or mixer_channel plus slot (from daw_insert_effect). "
-                    "param: ID from library_plugin_params. Set with display (text in the plug-in's own units, e.g. '6' "
+                    "param: ID from library_plugin_params ('vstp123' for VST3), or a VST3 parameter title together with "
+                    "plugin (e.g. plugin 'Vital', param 'Filter 1 Cutoff'). Set with display (text in the plug-in's own units, e.g. '6' "
                     "for 6 dB, '80 Hz', '25 %'; recommended) or normalized (0..1). Omit both to read.",
      "inputSchema": _schema({"instrument_slot": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
-                             "slot": _S, "param": _S, "display": {"type": ["string", "number"]}, "normalized": _N,
+                             "slot": _S, "param": _S, "plugin": _S,
+                             "display": {"type": ["string", "number"]}, "normalized": _N,
                              "wait": _WAIT}, ["param"])},
     {"name": "daw_scan_plugin_params",
      "description": "List which parameters of a third-party plug-in Studio One exposes, by scanning names "
                     "prefix+N (default vstp0..vstp1000). Same slot arguments as daw_plugin_param. EXPERIMENTAL.",
      "inputSchema": _schema({"instrument_slot": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "slot": _S, "prefix": _S, "from": _I, "to": _I, "limit": _I, "wait": _WAIT})},
+    {"name": "daw_list_instruments",
+     "description": "Instrument slots in the open song (e.g. Inst01) and the plug-in in each, for daw_plugin_param.",
+     "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_insert_notes",
      "description": "Create a new instrument part on a track and fill it with notes. "
                     "start_beats/length_beats in quarter notes; note start is relative to the part. "
@@ -291,6 +298,20 @@ def _song_analyze(path, audio=True):
     return out
 
 
+def _vst3_param_name(plugin, title):
+    """'vstp<id>' for a VST3 parameter title (exact, else the only title containing it)."""
+    if vst3params.params(plugin) is None:
+        return title  # not a dumped VST3 plug-in: pass through (native parameter IDs)
+    exact = vst3params.resolve(plugin, title)
+    if exact:
+        return exact
+    hits = vst3params.find(plugin, title, 5)
+    if hits["total"] == 1:
+        return hits["params"][0]["param"]
+    raise ToolError("parameter %r of %s: %d matches %s; use library_plugin_params"
+                    % (title, plugin, hits["total"], [p["title"] for p in hits["params"]]))
+
+
 def _trigger():
     """Press the virtual 'Run Jobs' button. Returns an error string or None."""
     if not USE_MIDI:
@@ -332,6 +353,11 @@ def call(name, a):
     if name == "library_effects":
         return library.effects()
     if name == "library_plugin_params":
+        found = vst3params.find(a["plugin"], a.get("query", ""), a.get("limit", 60))
+        if found is not None:
+            found["plugin"] = a["plugin"]
+            found["format"] = "VST3"
+            return found
         return {"params": library.native_params(a["plugin"]),
                 "presets": [p["folder"] + "/" + p["name"] for p in library.presets(a["plugin"])][:100]}
 
@@ -411,11 +437,15 @@ def call(name, a):
         keys = ("class_id", "track", "mixer_channel") if name == "daw_insert_effect" else \
             ("instrument_slot", "track", "mixer_channel", "slot", "param", "display", "normalized")
         args = {k: a[k] for k in keys if k in a}
+        if name == "daw_plugin_param" and a.get("plugin") and not args["param"].startswith("vstp"):
+            args["param"] = _vst3_param_name(a["plugin"], args["param"])
         if "track" in args and "mixer_channel" not in args:
             hint = _instrument_channel_hint(args["track"])
             if hint:
                 args["instrument_channel"] = hint
         return _bridge("insert_effect" if name == "daw_insert_effect" else "plugin_param", args, wait)
+    if name == "daw_list_instruments":
+        return _bridge("list_instruments", {}, wait)
     if name == "daw_insert_notes":
         return _bridge("insert_notes", {k: a[k] for k in ("track", "start_beats", "length_beats", "notes")}, wait)
     if name == "daw_transport":

@@ -129,6 +129,16 @@ checkout (`python3 -m venv .venv && .venv/bin/pip install numpy`), install the p
 extra (`pip install "studio-one-ai-bridge[analysis]"` / `uvx --from "/path[analysis]" ...`), or
 point `S1BRIDGE_ANALYSIS_PYTHON` at any Python that has numpy.
 
+### Optional: VST3 parameter names
+
+`tools/vst3dump/` builds a small helper that reads parameter names of installed VST3 plug-ins.
+It needs Xcode command line tools and the VST3 `pluginterfaces` headers, which are not included:
+
+```bash
+git clone https://github.com/steinbergmedia/vst3_pluginterfaces.git third_party/pluginterfaces
+tools/vst3dump/build.sh
+```
+
 ### Uninstall
 
 ```bash

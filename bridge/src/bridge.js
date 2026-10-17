@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.5.2";
+const kBridgeVersion = "0.5.3";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -704,6 +704,29 @@ function findPluginSlot (context, args)
 	return slot || fail ("insert not found on " + r.channel.label + ": " + args.slot);
 }
 
+function closeTo (a, b)
+{
+	return !isNaN (a) && Math.abs (a - b) <= Math.max (0.02 * Math.abs (b), 1e-3);
+}
+
+// Instrument slots ("Inst01".. ) with the plug-in loaded in each. Names are probed because the
+// Synths folder has numChildren but no enumerator in the script API (observed 0.4.0).
+Ops.list_instruments = function (context, args)
+{
+	let synths = context.functions.root.environment.find ("Synths");
+	let out = [];
+	for(let i = 1; i <= 64; i++)
+	{
+		let name = "Inst" + (i < 10 ? "0" : "") + i;
+		let slot = synths.find (name);
+		if(!slot)
+			continue;
+		let dev = slot.find ("Device");
+		out.push ({ slot: name, plugin: dev ? dev.name : null });
+	}
+	return { instruments: out };
+};
+
 Ops.plugin_param = function (context, args)
 {
 	let slot = findPluginSlot (context, args);
@@ -722,13 +745,38 @@ Ops.plugin_param = function (context, args)
 	// Observed (0.5.0): plug-in params use an internal 0..10000 range; p.string is the display text.
 	// p.fromString ("6") / ("80 Hz") sets by display units (Pro EQ lfgain -> "6.00", lffreq -> "80.0 Hz").
 	let before = p.string;
+	let method = null;
 	if(args.display !== undefined)
+	{
 		p.fromString (String (args.display));
+		method = "fromString";
+		// Some plug-ins parse text badly (Vital: "0.5" for an attack time gave "16 secs").
+		// If the target is a number and the display does not show it, search the normalized
+		// value by reading the display back (assumes the display grows with the value).
+		let target = parseFloat (args.display);
+		if(!isNaN (target) && !closeTo (parseFloat (p.string), target))
+		{
+			let lo = 0, hi = 1;
+			for(let i = 0; i < 30; i++)
+			{
+				let mid = (lo + hi) / 2;
+				p.setNormalized (mid);
+				let v = parseFloat (p.string);
+				if(isNaN (v))
+					break;
+				if(v < target) lo = mid; else hi = mid;
+			}
+			p.setNormalized (hi);
+			method = closeTo (parseFloat (p.string), target) ? "search" : "search (approximate)";
+		}
+	}
 	else if(args.normalized !== undefined)
 		p.setNormalized (args.normalized);
 	else if(args.value !== undefined)
 		p.setValue (args.value, true);
 	let out = { slot: slot.name, param: args.param, found_on: where, before: before, display: p.string, raw: p.value };
+	if(method)
+		out.method = method;
 	try { out.normalized = p.getNormalized (); } catch(e) {}
 	return out;
 };

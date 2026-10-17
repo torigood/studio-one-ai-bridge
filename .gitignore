@@ -18,3 +18,7 @@ re/extracted/
 
 # bridge discovery dumps
 host-api*.json
+
+# VST3 parameter dumper: build output and cloned Steinberg headers (see README)
+tools/vst3dump/build/
+third_party/pluginterfaces/
