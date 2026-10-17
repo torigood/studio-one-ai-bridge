@@ -194,6 +194,16 @@ TOOLS = [
     {"name": "daw_delete_track",
      "description": "Delete a track of the open song (undoable with Edit/Undo). An instrument it used stays loaded.",
      "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
+    {"name": "daw_rename_track",
+     "description": "Rename a track of the open song. For an instrument track whose instrument output channel is "
+                    "labelled like the track, that mixer channel is renamed too. Not undoable with Edit/Undo.",
+     "inputSchema": _schema({"track": _TRACK, "name": _S, "wait": _WAIT}, ["track", "name"])},
+    {"name": "daw_duplicate_track",
+     "description": "Duplicate a track of the open song: a new track at the end of the track list, same "
+                    "instrument (shared, not a second instance), with copies of all its parts/clips unless "
+                    "events=false (about 2 s per event). Returns the new track's index and name (Studio One appends "
+                    "' 2'); name renames it. Adds several undo steps and changes the selection.",
+     "inputSchema": _schema({"track": _TRACK, "name": _S, "events": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
     {"name": "daw_delete_event",
      "description": "Delete the event (instrument part or audio clip) that starts at start_beats on a track of the "
                     "open song, or the one at index (daw_list_events). all=true deletes every event starting there. "
@@ -259,8 +269,9 @@ TOOLS = [
     {"name": "daw_set_channel_param",
      "description": "Set a mixer parameter. volume: linear gain, 1.0 = 0 dB. pan: 0..1, 0.5 = centre; observed 0.25 shows R50 in the mixer, so values below 0.5 pan RIGHT. "
                     "Also mute, solo, recordArmed, monitor (0/1). For an instrument track, volume/pan go to its "
-                    "instrument output channel, found from the saved song; if the song is unsaved, pass "
-                    "mixer_channel (index, name or label from daw_list_mixer) instead of track.",
+                    "instrument output channel, found from the saved song, else the instrument channel labelled "
+                    "like the track, else by saving the song (File > Save) and reading it again. If none works "
+                    "(song never saved), pass mixer_channel (index, name or label from daw_list_mixer) instead.",
      "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "param": _S, "value": _N, "wait": _WAIT}, ["param", "value"])},
     {"name": "daw_add_instrument",
@@ -346,23 +357,43 @@ def _find_track(tracks, ref):
     raise ToolError("track not found: %r" % (ref,))
 
 
-def _instrument_channel_hint(track, wait=None):
-    """AudioSynth channel name ("Channel03") for an instrument track of the open song, read from that song's
-    saved file (the live API has no track -> instrument channel link). None if the song or track is unsaved."""
-    path = _active_song_path(wait)
-    if not path:
-        return None
-    if not isinstance(track, str):
-        tracks = _bridge("list_tracks", {}, wait).get("tracks", [])
-        track = next((t["name"] for t in tracks if t["index"] == track), None)
-        if track is None:
-            return None
+def _saved_instrument_channel(path, track):
+    """(AudioSynth channel name or None, whether the saved file has the track at all)."""
     try:
         with Song(path) as s:
             ch = s.instrument_output_channel(track)
+            known = ch is not None or any(t["name"] == track for t in s.tracks())
     except Exception:
+        return None, False
+    return (ch.get("name") if ch else None), known
+
+
+def _instrument_channel_hint(track, wait=None):
+    """AudioSynth channel name ("Channel03") for an instrument track of the open song. The live API has no
+    track -> instrument channel link (0.7.2: no such property or child on the track or its channel), so try
+    in order: the saved song's instrumentOut connection, the one AudioSynth channel labelled like the track
+    (Studio One names both after the instrument; daw_rename_track keeps them equal), and for a track the
+    saved file does not have yet, File > Save and read again. None for audio tracks or if nothing matched."""
+    res = _bridge("list_tracks", {}, wait)
+    tracks = res.get("tracks", []) if isinstance(res, dict) else []
+    info = next((t for t in tracks if t["index"] == track or t["name"] == track), None)
+    if info is None or info.get("channelType") != "MusicTrack":
         return None
-    return ch.get("name") if ch else None
+    name = info["name"]
+    path = _active_song_path(wait)
+    known = False
+    if path:
+        ch, known = _saved_instrument_channel(path, name)
+        if ch:
+            return ch
+    mixer = _bridge("list_mixer", {}, wait)
+    synths = [c for c in (mixer.get("channels", []) if isinstance(mixer, dict) else [])
+              if c.get("channelType") == "AudioSynth" and c.get("label") == name]
+    if len(synths) == 1:
+        return synths[0]["name"]
+    if path and not known and USE_MIDI and _save_open_song(path):
+        return _saved_instrument_channel(path, name)[0]
+    return None
 
 
 # Directory that contains the s1bridge package (server/ in a checkout, site-packages when installed)
@@ -518,6 +549,17 @@ def _wait_for_bridge(seconds):
     return False
 
 
+def _save_open_song(path):
+    """Press File/Save (surface CC 116) and wait up to 10 s for the file to change. True if it did."""
+    before = os.path.getmtime(path)
+    midi.press(midi.CC_SAVE)
+    for _ in range(40):
+        time.sleep(0.25)
+        if os.path.getmtime(path) != before:
+            return True
+    return False
+
+
 def _offline_edit(path, write):
     """Run write(path) on a saved song. If Studio One has it open: save, close, write, reopen.
     Save and Close are pressed through the AI Bridge surface (CC 116/115): File/Close run from a job
@@ -525,12 +567,7 @@ def _offline_edit(path, write):
     reopens the song in the running app."""
     was_open = _open_in_daw(path)
     if was_open:
-        before = os.path.getmtime(path)
-        midi.press(midi.CC_SAVE)
-        for _ in range(40):
-            time.sleep(0.25)
-            if os.path.getmtime(path) != before:
-                break
+        _save_open_song(path)
         midi.press(midi.CC_CLOSE)
         for _ in range(20):
             time.sleep(0.5)
@@ -626,6 +663,138 @@ def _events(track, wait):
     if isinstance(r, dict) and r.get("status") == "queued":
         raise ToolError("the bridge did not answer; is Studio One running with a song open?")
     return r["events"]
+
+
+def _tracks(wait):
+    r = _bridge("list_tracks", {}, wait)
+    if isinstance(r, dict) and r.get("status") == "queued":
+        raise ToolError("the bridge did not answer; is Studio One running with a song open?")
+    return r["tracks"]
+
+
+def _find_track(tracks, ref):
+    for t in tracks:
+        if (isinstance(ref, int) and t["index"] == ref) or t["name"] == ref:
+            return t
+    raise ToolError("track not found: %r" % (ref,))
+
+
+# Mixer channel by daw_list_mixer index, for daw_call steps (MixerConsole channel list 1, see bridge.js).
+def _mixer_channel_steps(index, var):
+    return [{"as": var + "_f", "on": {"context": True}, "get": "functions"},
+            {"as": var + "_r", "on": {"var": var + "_f"}, "get": "root"},
+            {"as": var + "_e", "on": {"var": var + "_r"}, "get": "environment"},
+            {"as": var + "_m", "on": {"var": var + "_e"}, "call": "find", "args": ["MixerConsole"]},
+            {"as": var + "_l", "on": {"var": var + "_m"}, "call": "getChannelList", "args": [1]},
+            {"as": var, "on": {"var": var + "_l"}, "call": "getChannel", "args": [index]}]
+
+
+def _rename_track(track, name, wait):
+    # Observed 0.7.2: track.name = .. is ignored, track.channel.label = .. renames the track (arrange and
+    # mixer); an AudioSynth channel's label is writable the same way, and renaming it also renames the
+    # instrument tracks it plays (Studio One names them after the instrument). Not an undo step.
+    if not name:
+        raise ToolError("name is empty")
+    before = _tracks(wait)
+    t = _find_track(before, track)
+    steps = []
+    synth = None
+    if t.get("channelType") == "MusicTrack":
+        chans = _bridge("list_mixer", {}, wait).get("channels", [])
+        hits = [c for c in chans if c.get("channelType") == "AudioSynth" and c.get("label") == t["name"]]
+        if len(hits) == 1:
+            synth = hits[0]
+            steps += _mixer_channel_steps(synth["index"], "s") + [{"on": {"var": "s"}, "set": "label", "value": name}]
+    steps += [{"as": "c", "on": {"track": t["index"]}, "get": "channel"},
+              {"on": {"var": "c"}, "set": "label", "value": name}]
+    r = _bridge("call", {"steps": steps}, wait)
+    errors = [x["error"] for x in r.get("results", []) if "error" in x]
+    if errors:
+        raise ToolError("rename failed: %s" % errors[0])
+    after = _tracks(wait)
+    # other tracks on the same instrument were renamed with it: put their names back
+    restore = [b for b, a in zip(before, after) if b["index"] != t["index"] and a["name"] != b["name"]]
+    if restore:
+        steps = []
+        for i, b in enumerate(restore):
+            steps += [{"as": "c%d" % i, "on": {"track": b["index"]}, "get": "channel"},
+                      {"on": {"var": "c%d" % i}, "set": "label", "value": b["name"]}]
+        _bridge("call", {"steps": steps}, wait)
+    if after[t["index"]]["name"] != name:
+        raise ToolError("Studio One kept the name %r" % after[t["index"]]["name"])
+    out = {"index": t["index"], "old": t["name"], "name": name}
+    if synth:
+        out["instrument_channel"] = synth["name"]
+    if restore:
+        out["kept_names"] = [b["name"] for b in restore]
+    return out
+
+
+def _event_key(e):
+    return (round(e["start"], 6), round(e["length"], 6), round(e.get("offset", 0), 6), e.get("name"))
+
+
+def _duplicate_track(track, name, copy_events, wait):
+    # Observed 0.7.2: functions.duplicateTrack (track) adds an empty copy (same instrument, name + " 2") at the
+    # end of the track list; Track/Duplicate acts on the focused track, not the script selection, so it is not used.
+    # functions.transferEvent (event, track, startBeats) moves an event to another track. Each event is
+    # copied by moving it to the new track, Edit/Duplicate there (the copy lands at start + length, where
+    # nothing else on the new track starts because events go in ascending order), and moving the copy back.
+    before = _tracks(wait)
+    src = _find_track(before, track)
+    events = sorted(_events(src["index"], wait), key=lambda e: e["start"]) if copy_events else []
+    r = _bridge("call", {"steps": [
+        {"on": {"functions": ""}, "set": "executeImmediately", "value": True},
+        {"on": {"functions": ""}, "call": "duplicateTrack", "args": [{"track": src["index"]}], "names": ["name"]},
+        {"on": {"functions": ""}, "set": "executeImmediately", "value": False}]}, wait)
+    res = r.get("results", [])
+    if len(res) < 2 or "error" in res[1] or res[1].get("value") != "object":
+        raise ToolError("duplicateTrack failed: %s" % r)
+    after = _tracks(wait)
+    if len(after) != len(before) + 1:
+        raise ToolError("expected one new track, found %d" % (len(after) - len(before)))
+    old = [(t["name"], t["mediaType"]) for t in before]
+    new = next(t for i, t in enumerate(after) if i >= len(old) or (t["name"], t["mediaType"]) != old[i])
+    src_i = src["index"] + (1 if new["index"] <= src["index"] else 0)
+    warnings = []
+    for e in events:
+        key = _event_key(e)
+        cur = next((x for x in _events(src_i, wait) if _event_key(x) == key), None)
+        if cur is None:
+            warnings.append("event at beat %s not found any more" % e["start"])
+            continue
+        _bridge("call", {"steps": [
+            {"as": "e", "on": {"event": {"track": src_i, "index": cur["index"]}}},
+            {"on": {"functions": ""}, "set": "executeImmediately", "value": True},
+            {"on": {"functions": ""}, "call": "transferEvent", "args": [{"var": "e"}, {"track": new["index"]}, e["start"]]},
+            {"on": {"functions": ""}, "set": "executeImmediately", "value": False},
+            {"as": "ed", "on": {"context": True}, "get": "editor"},
+            {"as": "sel", "on": {"var": "ed"}, "get": "selection"},
+            {"on": {"var": "sel"}, "call": "unselectAll"},
+            {"as": "sf", "on": {"var": "ed"}, "call": "createSelectFunctions", "args": [{"functions": ""}]},
+            {"on": {"var": "sf"}, "call": "selectMultiple", "args": [[{"var": "e"}]]}]}, wait)
+        _bridge("command", {"category": "Edit", "name": "Duplicate"}, wait)
+        copy_key = (round(e["start"] + e["length"], 6),) + key[1:]
+        copy = next((x for x in _events(new["index"], wait) if _event_key(x) == copy_key), None)
+        if copy is None:
+            warnings.append("no copy made of the event at beat %s; it was moved to the new track" % e["start"])
+            continue
+        _bridge("call", {"steps": [
+            {"on": {"functions": ""}, "set": "executeImmediately", "value": True},
+            {"on": {"functions": ""}, "call": "transferEvent",
+             "args": [{"event": {"track": new["index"], "index": copy["index"]}}, {"track": src_i}, e["start"]]},
+            {"on": {"functions": ""}, "set": "executeImmediately", "value": False}]}, wait)
+    out = {"source": src["name"], "index": new["index"], "name": new["name"]}
+    if copy_events:
+        got = sorted(_event_key(x) for x in _events(new["index"], wait))
+        if got != sorted(_event_key(e) for e in events):
+            warnings.append("new track has %d events, source had %d" % (len(got), len(events)))
+        out["events"] = len(got)
+    if name:
+        out["name"] = _rename_track(new["index"], name, wait)["name"]
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def _repeat_event(track, start_beats, times, shared, wait):
@@ -768,6 +937,10 @@ def call(name, a):
         return _bridge("edit_event", args, wait)
     if name == "daw_delete_track":
         return _bridge("delete_track", {"track": a["track"]}, wait)
+    if name == "daw_rename_track":
+        return _rename_track(a["track"], a["name"], wait)
+    if name == "daw_duplicate_track":
+        return _duplicate_track(a["track"], a.get("name"), a.get("events", True), wait)
     if name == "daw_delete_event":
         if "start_beats" not in a and "index" not in a:
             raise ToolError("pass start_beats or index")

@@ -187,13 +187,14 @@ Then remove the device under Options → External Devices.
 | `daw_status`, `daw_ping` | Bridge health |
 | `daw_list_tracks`, `daw_list_mixer` | Tracks and mixer channels of the open song |
 | `daw_add_track`, `daw_insert_notes` | Add tracks, write a part with notes |
+| `daw_rename_track`, `daw_duplicate_track`, `daw_delete_track` | Rename (with its instrument channel), duplicate with all parts/clips, delete |
 | `daw_read_notes`, `daw_edit_notes` | Read the open song's notes; change, add, delete notes |
 | `daw_read_chords`, `song_write_chords` | Chord track (read live, write offline with auto reopen) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
 | `daw_bounce` | Render a track to audio and analyze it |
 | `daw_list_events`, `daw_repeat_event` | Events on a track; repeat a loop or part back to back |
 | `daw_add_instrument`, `daw_insert_effect` | Load instruments and insert effects |
-| `daw_set_channel_param` | Volume / pan |
+| `daw_set_channel_param` | Volume / pan (instrument tracks: their instrument channel is found automatically, saving the song if needed) |
 | `daw_plugin_param`, `daw_scan_plugin_params` | Read/set plug-in parameters |
 | `daw_command` | Run a Studio One command (dangerous ones blocked) |
 | `daw_transport` | Play / stop |
