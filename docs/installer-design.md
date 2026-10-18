@@ -164,7 +164,7 @@ optional manual steps.
 |---|---|---|
 | 0 | Live test: device entry written by a script binds the surface | **done 2026-10-18**, `server/s1bridge/devices.py` |
 | 1 | `s1bridge.setup` + CLI (`setup`, `doctor`, `uninstall`), device entry, tests on temp dirs | **done 2026-10-18**: `server/s1bridge/setup.py`; sources still read from the checkout (no package data yet, an `.mcpb` can ship the checkout layout) |
-| 2 | MCP tools `bridge_setup`, `bridge_doctor`; version check in `daw_status` | Claude installs the bridge from chat |
+| 2 | MCP tools `bridge_setup`, `bridge_doctor`; version check in `daw_status` | **done 2026-10-18**: tools in `tools.py`; `daw_status` has `bridge_expected` / `bridge_installed` / `problem`, `daw_ping` a `warning`; setup output kept off the MCP stdout |
 | 3 | `.mcpb` manifest + build script; test on clean macOS user | double-click install works without terminal |
 | 4 | README "Quick start" for non-developers (4 steps above); developer install moves below | |
 | 5 | Client adapters (Claude Code, Cursor, print) | |

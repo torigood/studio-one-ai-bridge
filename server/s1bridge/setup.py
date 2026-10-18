@@ -274,8 +274,9 @@ def apply(paths, steps, log=print):
                 log("  MIDI daemon did not start: %s" % e)
 
 
-def run(steps, paths, do_apply, running=studio_one_running, log=print):
+def run(steps, paths, do_apply, running=None, log=print):
     """Print the plan; with do_apply, back up and perform it. Returns a process exit code."""
+    running = running or studio_one_running
     log(describe(steps))
     if not do_apply:
         log("Dry run, nothing changed. Add --apply to perform these steps.")
@@ -303,10 +304,11 @@ def _check(name, ok, detail="", fix=""):
     return {"check": name, "ok": ok, "detail": detail, "fix": fix}
 
 
-def doctor(paths=None, ping=True, running=studio_one_running, system=True):
+def doctor(paths=None, ping=True, running=None, system=True):
     """List of checks: ok True (fine), False (broken, see fix) or None (optional / skipped).
     system=False leaves out the checks that start processes (MIDI daemon, numpy)."""
     paths = paths or Paths()
+    running = running or studio_one_running
     setup_fix = "quit Studio One, then run: python3 -m s1bridge setup --apply"
     out = []
 

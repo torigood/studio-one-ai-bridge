@@ -82,6 +82,8 @@ python3 server/run.py doctor
 ```
 
 The older `python3 install/install.py --surface [--apply]` still works and does the same.
+Once the MCP server is registered (step 3), the AI can also do this for you with the
+`bridge_doctor` and `bridge_setup` tools: quit Studio One and ask it to set up Studio One.
 
 ### 3. Register the MCP server with your AI client
 
@@ -197,7 +199,9 @@ This removes the extension, the surface, its device entry and the catalog.
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |
 | `library_loops` | Loops in installed Sound Sets, with length/BPM once indexed |
 | `commands_search` | Search the generated command catalog |
-| `daw_status`, `daw_ping` | Bridge health |
+| `bridge_doctor` | Check every piece of the Studio One side and say how to fix what is missing |
+| `bridge_setup` | Install or update the Studio One side (same as `setup --apply`; Studio One must be quit) |
+| `daw_status`, `daw_ping` | Bridge health; both warn when the installed bridge does not match the server |
 | `daw_list_tracks`, `daw_list_mixer` | Tracks and mixer channels of the open song |
 | `daw_add_track`, `daw_insert_notes` | Add tracks, write a part with notes |
 | `daw_rename_track`, `daw_duplicate_track`, `daw_delete_track` | Rename (with its instrument channel), duplicate with all parts/clips, delete |

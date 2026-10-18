@@ -4,9 +4,11 @@ Two groups:
   song_*  read saved .song files directly (read-only, no Studio One needed)
   daw_*   send a job to the in-DAW bridge through the mailbox and wait for its result
 """
+import contextlib
 import glob
 import json
 import os
+import sys
 
 from . import config
 from . import midi
@@ -18,6 +20,7 @@ from . import songwrite
 from . import loops
 from . import chords
 from . import effects
+from . import setup
 import time
 from .keys import key_from_notes
 import subprocess
@@ -145,9 +148,24 @@ TOOLS = [
      "description": "Search Studio One commands (category/name/args) known from shipped files. "
                     "Use before daw_command.",
      "inputSchema": _schema({"query": _S, "category": _S, "limit": _I})},
+    # ---- install -----------------------------------------------------------
+    {"name": "bridge_doctor",
+     "description": "Check the Studio One side of the bridge: Studio One found, extension installed and its version, "
+                    "control surface, device registration, MIDI port, mailbox, a ping when Studio One runs, catalog, "
+                    "numpy. Each failed check has a fix. Run it when daw_* tools stay queued or fail, or before "
+                    "bridge_setup.",
+     "inputSchema": _schema({})},
+    {"name": "bridge_setup",
+     "description": "Install or update the Studio One side of the bridge: writes the extension, the control surface "
+                    "and its device entry into Studio One's settings folder (backed up first), builds the command "
+                    "catalog and starts the MIDI port. Studio One must not be running: ask the user to save their "
+                    "song and quit Studio One first. Afterwards the user starts Studio One and opens a song; then "
+                    "daw_ping should answer. catalog=false skips the command catalog.",
+     "inputSchema": _schema({"catalog": {"type": "boolean"}})},
     # ---- live (bridge) -----------------------------------------------------
     {"name": "daw_status",
-     "description": "Bridge status: whether the Studio One bridge has loaded, and jobs still waiting.",
+     "description": "Bridge status: whether the Studio One bridge has loaded, jobs still waiting, and whether the "
+                    "installed bridge matches this server (problem says what to do if not).",
      "inputSchema": _schema({})},
     {"name": "daw_ping", "description": "Round-trip test through the bridge.",
      "inputSchema": _schema({"wait": _WAIT})},
@@ -474,6 +492,26 @@ def _vst3_param_name(plugin, title):
                     % (title, plugin, hits["total"], [p["title"] for p in hits["params"]]))
 
 
+def _version_check(status):
+    """Compare the bridge this server ships, the one installed and the one Studio One last loaded."""
+    paths = setup.Paths()
+    want = setup.source_version()
+    installed = (setup.installed_version(os.path.join(paths.ext_dir, "scripts", "aibridge.package"))
+                 or setup.installed_version(paths.app_script))
+    loaded = status.get("version") if isinstance(status, dict) else None
+    out = {"bridge_expected": want, "bridge_installed": installed}
+    if installed is None:
+        out["problem"] = ("The bridge is not installed in Studio One. Ask the user to save their song and quit "
+                          "Studio One, then call bridge_setup.")
+    elif installed != want:
+        out["problem"] = ("Installed bridge %s is older than this server (%s). Ask the user to save their song and "
+                          "quit Studio One, then call bridge_setup." % (installed, want))
+    elif loaded and loaded != installed and isinstance(status, dict) and status.get("loaded"):
+        out["problem"] = ("Studio One is still running bridge %s; %s is installed. Ask the user to restart "
+                          "Studio One." % (loaded, installed))
+    return out
+
+
 def _trigger():
     """Press the virtual 'Run Jobs' button. Returns an error string or None."""
     if not USE_MIDI:
@@ -526,8 +564,7 @@ def _bridge(op, args, wait):
     if r is None:
         return {"status": "queued", "job_id": job_id, "midi_trigger_error": trigger_error,
                 "note": "The bridge has not run this job yet. Is Studio One running with a song open? "
-                        "If daw_status shows poller.running is not true, run 'AI Bridge - Run Jobs' "
-                        "once in Studio One (Keyboard Shortcuts); after that jobs run automatically."}
+                        "Run bridge_doctor to find the cause; it says how to fix each missing piece."}
     if not r.get("ok"):
         raise ToolError("bridge error: %s" % r.get("error"))
     return r.get("result")
@@ -906,14 +943,39 @@ def call(name, a):
                 and (q in c["name"].lower() or q in c["category"].lower())]
         return hits[: a.get("limit", 40)]
 
+    if name == "bridge_doctor":
+        checks = setup.doctor()
+        return {"ok": all(c["ok"] is not False for c in checks), "checks": checks}
+    if name == "bridge_setup":
+        if setup.studio_one_running():
+            raise ToolError("Studio One is running. Ask the user to save their song and quit Studio One, "
+                            "then call bridge_setup again.")
+        paths = setup.Paths()
+        log = []
+        # stdout is the MCP channel; the catalog extractor prints progress
+        with contextlib.redirect_stdout(sys.stderr):
+            code = setup.run(setup.plan_install(paths, catalog=a.get("catalog", True)), paths, True, log=log.append)
+        if code:
+            raise ToolError("\n".join(log))
+        return {"installed": setup.source_version(), "log": log,
+                "next": "Ask the user to start Studio One and open a song, then call daw_ping."}
+
     if name == "daw_status":
         mb = Mailbox()
-        return {"mailbox": mb.root, "status": mb.read_json("status.json"),
-                "poller": mb.read_json("poller.json"), "pending_jobs": mb.pending()}
+        status = mb.read_json("status.json")
+        out = {"mailbox": mb.root, "status": status,
+               "poller": mb.read_json("poller.json"), "pending_jobs": mb.pending()}
+        out.update(_version_check(status))
+        return out
 
     wait = a.get("wait")
     if name == "daw_ping":
-        return _bridge("ping", {}, wait)
+        r = _bridge("ping", {}, wait)
+        want = setup.source_version()
+        if isinstance(r, dict) and r.get("version") and r["version"] != want:
+            r["warning"] = ("Studio One runs bridge %s, this server expects %s. Ask the user to quit Studio One, "
+                            "call bridge_setup, then start Studio One again." % (r["version"], want))
+        return r
     if name == "daw_list_tracks":
         return _bridge("list_tracks", {}, wait)
     if name == "daw_command":
