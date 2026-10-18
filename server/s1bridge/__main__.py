@@ -11,7 +11,7 @@ import traceback
 
 from . import tools
 
-SERVER_INFO = {"name": "studio-one-ai-bridge", "version": "0.3.0"}  # keep equal to pyproject.toml
+SERVER_INFO = {"name": "studio-one-ai-bridge", "version": "0.4.0"}  # keep equal to pyproject.toml
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 
