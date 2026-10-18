@@ -402,11 +402,22 @@ def cli(argv):
         p.add_argument("--target", choices=["extension", "app-scripts"], default="extension")
         p.add_argument("--i-understand-app-bundle-change", action="store_true")
         p.add_argument("--no-catalog", action="store_true", help="skip the command catalog")
+    c = sub.add_parser("connect", help="register this server with another AI app")
+    c.add_argument("client", nargs="?", help="claude-desktop, claude-code, codex, gemini, cursor, lmstudio, vscode")
+    c.add_argument("--list", action="store_true", help="show which apps were found")
+    c.add_argument("--remove", action="store_true")
+    c.add_argument("--apply", action="store_true", help="actually change files (default: dry run)")
     d = sub.add_parser("doctor")
     d.add_argument("--json", action="store_true")
     d.add_argument("--no-ping", action="store_true", help="do not send a ping to Studio One")
     args = ap.parse_args(argv)
 
+    if args.cmd == "connect":
+        from . import clients
+        if args.list or not args.client:
+            print(clients.describe_all())
+            return 0
+        return clients.connect(args.client, args.remove, args.apply)
     paths = Paths()
     if args.cmd == "doctor":
         checks = doctor(paths, ping=not args.no_ping)

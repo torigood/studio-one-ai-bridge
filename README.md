@@ -1,6 +1,6 @@
 # Studio One AI Bridge
 
-Let an AI assistant (Claude, ChatGPT/OpenAI agents, or any [MCP](https://modelcontextprotocol.io)
+Let an AI assistant (Claude, Codex/OpenAI agents, Gemini CLI, or any [MCP](https://modelcontextprotocol.io)
 client) read and operate **PreSonus Studio One 5**: list and summarise your songs, add tracks,
 write notes, load instruments and effects, set volume, pan and plug-in parameters.
 
@@ -99,7 +99,21 @@ Once the MCP server is registered (step 3), the AI can also do this for you with
 
 ### 3. Register the MCP server with your AI client
 
-Claude Code:
+Let setup do it (dry run without `--apply`; JSON configs are backed up first):
+
+```bash
+python3 server/run.py connect --list
+python3 server/run.py connect codex --apply
+```
+
+Apps: `claude-code`, `codex` (OpenAI; included with ChatGPT plans), `gemini` (Gemini CLI),
+`cursor`, `lmstudio`, `vscode` (GitHub Copilot agent mode), `claude-desktop` (only if you do
+not use the `.mcpb`). `--remove --apply` unregisters. From the Claude Desktop extension, ask
+Claude to "connect Codex too" (`bridge_connect_client`); the other app then runs the
+extension's bundled Python. The ChatGPT chat app accepts only remote HTTPS MCP servers and
+cannot start this local server; use Codex with a ChatGPT plan instead.
+
+Or by hand. Claude Code:
 
 ```bash
 claude mcp add studio-one -- python3 /path/to/studio-one-ai-bridge/server/run.py
@@ -213,6 +227,7 @@ This removes the extension, the surface, its device entry and the catalog.
 | `commands_search` | Search the generated command catalog |
 | `bridge_doctor` | Check every piece of the Studio One side and say how to fix what is missing |
 | `bridge_setup` | Install or update the Studio One side (same as `setup --apply`; Studio One must be quit) |
+| `bridge_connect_client` | Register this server with another AI app (Codex, Claude Code, Gemini CLI, Cursor, LM Studio, VS Code) |
 | `daw_status`, `daw_ping` | Bridge health; both warn when the installed bridge does not match the server |
 | `daw_list_tracks`, `daw_list_mixer` | Tracks and mixer channels of the open song |
 | `daw_add_track`, `daw_insert_notes` | Add tracks, write a part with notes |
@@ -220,6 +235,9 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_read_notes`, `daw_edit_notes` | Read the open song's notes; change, add, delete notes |
 | `daw_read_chords`, `song_write_chords` | Chord track (read live, write offline with auto reopen) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
+| `daw_set_loop` | Loop range by bars or beats, loop on/off |
+| `song_write_markers` | Named song sections (Intro, Verse, Chorus...) in the Marker Track (offline with auto reopen) |
+| `daw_add_send`, `daw_set_send` | New FX channel with an effect (reverb, delay...) and a send to it; send level and pan |
 | `daw_bounce` | Render a track to audio and analyze it |
 | `daw_list_events`, `daw_repeat_event` | Events on a track; repeat a loop or part back to back |
 | `daw_add_instrument`, `daw_insert_effect` | Load instruments and insert effects |

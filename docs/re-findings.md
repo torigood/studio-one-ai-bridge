@@ -139,4 +139,22 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
 - [O] `track.name = ..` does not rename a track (value unchanged, 0.7.1). **Renaming works through the channel (2026-10-18)**: `track.channel.label = name` renames the track in arrange and mixer and is saved; `channel.title` follows label. An AudioSynth channel's `label` is writable too, and Studio One then renames the instrument tracks it plays to that label (a test rename of Vital's channel renamed the AI Vital track to "Vital"). Not an undo step. → `daw_rename_track` (renames a synth channel only when it is labelled like the track, then restores other tracks' names).
 - [O] **Duplicating (2026-10-18)**: `functions.duplicateTrack(track)` (executeImmediately) appends an EMPTY copy named `<name> 2` at the end of the list, same instrument (no second AudioSynth channel); a second arg changes nothing. `Track/Duplicate` acts on the focused track, not on `selectMultiple([track])`. `functions.transferEvent(event, track, startBeats)` moves an event to another track (third arg is the start; `true` gave beat 1); `addEventOnTrack(track, event)` and `moveEvent(e, beats, track)` do not. Copies: transfer the event to the new track, Edit/Duplicate there, transfer the copy back (~1.8 s per event). → `daw_duplicate_track`.
 - [O] No live track → AudioSynth link: MusicTrack channel has 5 children but `find` returns null for Output/Destination/Instrument/instrumentOut/Connection/Synth/... (only Inserts = "Note FX" and Automation found). `_instrument_channel_hint` falls back to the AudioSynth channel labelled like the track, then File/Save (CC 116) and the saved `instrumentOut`.
+- [O] **Loop range (2026-10-18)**: TransportPanel `loopStart`/`loopEnd` take `setValue(seconds, true)` (value = seconds,
+  string = bars); `fromString("0005.01.01.00")` and `setValue` on `loop` via the transport op did nothing, while `setValue(1)`
+  in a `call` job worked. `Transport/Set Loop Start|End` use some other position than the playhead the bridge sets.
+  `functions.root.timeContext.ppqToSeconds(beats)` converts. → `daw_set_loop` (server-side, `call` op).
+- [O] **Markers (2026-10-18)**: `Marker/Insert Named` ignores its `Name` argument and opens a modal "Insert Marker" dialog
+  that blocks the bridge until closed; the job hung the same way. `editor.model.markers` exposes only `findNextMarker`,
+  `findPreviousMarker`, `setSongMarker` (argument shapes unknown; a `findNextMarker({time})` job never answered). Offline:
+  song.xml `MarkerTrack/MarkerEvent markerType="0" start=<quarter notes> timeFormat="2" name=..`; Start/End are
+  markerType 2/3. Studio One loads and re-saves written markers. → `song_write_markers`.
+- [O] `editor.model.arranger.getArrangerTrack()` returns the Arranger Track (`createIterator`), `addArrangerEvent` exists
+  (untested). None of the user's songs has arranger sections, so the offline format is unknown.
+- [O] **Sends (2026-10-18)**: a channel's `find("Sends")` folder (no `sends` property) holds slots `Send01`.. (title "FX 1",
+  params `level` linear 0..3.162 shown in dB, `pan`). `DeviceEditFunctions.insertDevice(sendsFolder, effectClassID)` creates
+  a new FX channel (channelType AudioEffect, label = effect name) with that effect plus a send to it.
+  `connectChannel(sends|channel, fx[.input])` and `insertDevice(sends, fxChannel)` do nothing; `AudioMixer.setup` has
+  only `addChannel` and `focusChannel`. So sending to an existing FX channel is not scriptable. Group buses:
+  `audioMixer.setup.addChannel("AudioGroup")` + `connectChannel(channel, bus.input)` (Create Tracks.js). → `daw_add_send`,
+  `daw_set_send`.
 - [O] `getInsertPosition()` is not the new track's index (8 for a 6th track); the index is found by scanning the track list after creation.

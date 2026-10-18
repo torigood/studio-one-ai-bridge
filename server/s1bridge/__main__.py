@@ -2,6 +2,7 @@
 
 Run:  python3 -m s1bridge          (from the server/ directory)
       python3 -m s1bridge setup|doctor|uninstall   install / check the Studio One side (setup.py)
+      python3 -m s1bridge connect <app> [--apply]  register with another AI app (clients.py)
 """
 import json
 import math
@@ -66,7 +67,7 @@ def handle(msg):
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ("setup", "doctor", "uninstall"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("setup", "doctor", "uninstall", "connect"):
         from . import setup
         sys.exit(setup.cli(sys.argv[1:]))
     for line in sys.stdin:

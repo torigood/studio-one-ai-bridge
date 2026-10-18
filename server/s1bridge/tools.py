@@ -21,6 +21,7 @@ from . import loops
 from . import chords
 from . import effects
 from . import setup
+from . import clients
 import time
 from .keys import key_from_notes
 import subprocess
@@ -135,6 +136,16 @@ TOOLS = [
                              "chords": {"type": "array", "items": _schema({"beat": _N, "length": _N, "chord": _S},
                                                                           ["beat", "length", "chord"])}},
                             ["path", "chords"])},
+    {"name": "song_write_markers",
+     "description": "Write named markers (song sections like Intro, Verse, Chorus) into the Marker Track of a saved "
+                    ".song: [{name, bar (1-based)} or {name, beat (quarter notes from song start)}]. replace (default "
+                    "true) removes the old named markers first; Start/End stay. If the song is open it is saved, "
+                    "closed, written and reopened automatically. Read them back with song_summary (markers).",
+     "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
+                             "markers": {"type": "array", "items": {
+                                 "type": "object", "properties": {"name": _S, "bar": _I, "beat": _N},
+                                 "required": ["name"], "additionalProperties": False}}},
+                            ["path", "markers"])},
     {"name": "audio_analyze",
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
@@ -162,11 +173,41 @@ TOOLS = [
                     "song and quit Studio One first. Afterwards the user starts Studio One and opens a song; then "
                     "daw_ping should answer. catalog=false skips the command catalog.",
      "inputSchema": _schema({"catalog": {"type": "boolean"}})},
+    {"name": "bridge_connect_client",
+     "description": "Register this Studio One server with another AI app on this Mac so it can use these tools too: "
+                    "claude-code, codex (OpenAI, included with ChatGPT plans), gemini (Gemini CLI), cursor, lmstudio, "
+                    "vscode, or claude-desktop (only without this extension). Without client it lists which apps "
+                    "were found. remove=true unregisters. The app must be restarted afterwards. The ChatGPT chat app "
+                    "itself cannot start local servers; suggest Codex instead.",
+     "inputSchema": _schema({"client": {"type": "string", "enum": sorted(clients.CLIENTS)},
+                             "remove": {"type": "boolean"}})},
     # ---- live (bridge) -----------------------------------------------------
     {"name": "daw_status",
      "description": "Bridge status: whether the Studio One bridge has loaded, jobs still waiting, and whether the "
                     "installed bridge matches this server (problem says what to do if not).",
      "inputSchema": _schema({})},
+    {"name": "daw_set_loop",
+     "description": "Set the loop (cycle) range of the open song and turn looping on or off. start_bar/end_bar are "
+                    "1-based bars (end_bar is where the loop ends, e.g. 5 to 9 loops bars 5-8; bars assume the time "
+                    "signature at the playhead, pass start_beat/end_beat in quarter notes for songs with signature "
+                    "changes). Omit the range to only switch looping with enabled.",
+     "inputSchema": _schema({"start_bar": _I, "end_bar": _I, "start_beat": _N, "end_beat": _N,
+                             "enabled": {"type": "boolean"}, "wait": _WAIT})},
+    {"name": "daw_add_send",
+     "description": "Add an effect send: creates a new FX channel with the effect (e.g. Room Reverb, Analog Delay; "
+                    "effect = name or class_id from library_effects) and a send to it from the track's channel "
+                    "(instrument tracks: their instrument channel) or a mixer channel. level_db sets the send level "
+                    "(Studio One's default is -6 dB). Studio One's script API cannot send to an FX channel that "
+                    "already exists, so each call makes a new FX channel.",
+     "inputSchema": _schema({"effect": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
+                             "level_db": _N, "wait": _WAIT}, ["effect"])},
+    {"name": "daw_set_send",
+     "description": "Read or set a send of a track's channel (instrument tracks: their instrument channel) or a mixer "
+                    "channel: send = 1-based send number (default 1), level_db and/or pan (0..1, 0.5 = centre; as on "
+                    "channels, values below 0.5 pan RIGHT: 0.3 shows R40). "
+                    "Omit both to read the channel's sends.",
+     "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]}, "send": _I,
+                             "level_db": _N, "pan": _N, "wait": _WAIT})},
     {"name": "daw_ping", "description": "Round-trip test through the bridge.",
      "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_list_tracks", "description": "Tracks of the song open in Studio One right now.",
@@ -726,6 +767,178 @@ def _mixer_channel_steps(index, var):
             {"as": var, "on": {"var": var + "_l"}, "call": "getChannel", "args": [index]}]
 
 
+def _call(steps, wait, what):
+    """Run steps through the bridge's call op; raise on the first failing step."""
+    r = _bridge("call", {"steps": steps}, wait)
+    if not isinstance(r, dict) or "results" not in r:
+        raise ToolError("%s: bridge did not answer (%s)" % (what, r))
+    errors = [x["error"] for x in r["results"] if "error" in x]
+    if errors:
+        raise ToolError("%s failed: %s" % (what, errors[0]))
+    return r["results"]
+
+
+def _transport_steps():
+    return [{"as": "t_f", "on": {"context": True}, "get": "functions"},
+            {"as": "t_r", "on": {"var": "t_f"}, "get": "root"},
+            {"as": "t_e", "on": {"var": "t_r"}, "get": "environment"},
+            {"as": "tp", "on": {"var": "t_e"}, "call": "find", "args": ["TransportPanel"]},
+            {"as": "tc", "on": {"var": "t_r"}, "get": "timeContext"}]
+
+
+def _set_loop(a, wait):
+    # Observed 2026-10-18: TransportPanel loopStart/loopEnd take setValue(seconds), not fromString, and
+    # Transport/Set Loop Start ignores the playhead set by the bridge; timeContext.ppqToSeconds converts.
+    start, end = a.get("start_beat"), a.get("end_beat")
+    if a.get("start_bar") is not None or a.get("end_bar") is not None:
+        info = _bridge("transport", {}, wait)["before"]
+        per_bar = int(info.get("timeSignatureNum", 4)) * 4.0 / int(info.get("timeSignatureDenom", 4))
+        if a.get("start_bar") is not None:
+            start = (int(a["start_bar"]) - 1) * per_bar
+        if a.get("end_bar") is not None:
+            end = (int(a["end_bar"]) - 1) * per_bar
+    if (start is None) != (end is None):
+        raise ToolError("pass both the start and the end of the loop")
+    if start is not None and (start < 0 or end <= start):
+        raise ToolError("the loop must end after it starts (got %s..%s quarter notes)" % (start, end))
+    steps = _transport_steps()
+    if start is not None:
+        steps += [{"as": "s0", "on": {"var": "tc"}, "call": "ppqToSeconds", "args": [start]},
+                  {"as": "s1", "on": {"var": "tc"}, "call": "ppqToSeconds", "args": [end]},
+                  # end first: a start after the old end may be refused
+                  {"as": "pe", "on": {"var": "tp"}, "call": "findParameter", "args": ["loopEnd"]},
+                  {"on": {"var": "pe"}, "call": "setValue", "args": [{"var": "s1"}, True]},
+                  {"as": "ps", "on": {"var": "tp"}, "call": "findParameter", "args": ["loopStart"]},
+                  {"on": {"var": "ps"}, "call": "setValue", "args": [{"var": "s0"}, True]},
+                  {"on": {"var": "pe"}, "call": "setValue", "args": [{"var": "s1"}, True]}]
+    if "enabled" in a or start is not None:
+        steps += [{"as": "pl", "on": {"var": "tp"}, "call": "findParameter", "args": ["loop"]},
+                  {"on": {"var": "pl"}, "call": "setValue", "args": [1 if a.get("enabled", True) else 0, True]}]
+    _call(steps, wait, "set loop")
+    info = _bridge("transport", {}, wait)["before"]
+    return {"loop": info.get("loop") == "1", "loop_start": info.get("loopStart"), "loop_end": info.get("loopEnd")}
+
+
+def _effect_class(effect):
+    """class_id for an effect given by class_id or (part of) its name in library_effects."""
+    if effect.startswith("{"):
+        return effect, effect
+    effs = library.effects()
+    exact = [e for e in effs if e["name"].lower() == effect.lower()]
+    hits = exact or [e for e in effs if effect.lower() in e["name"].lower()]
+    if len(hits) != 1:
+        raise ToolError("effect %r matches %s; use library_effects and pass its class_id"
+                        % (effect, ", ".join(e["name"] for e in hits[:8]) or "nothing"))
+    return hits[0]["class_id"], hits[0]["name"]
+
+
+def _audio_channel_index(a, wait):
+    """daw_list_mixer index of the audio channel for a track (instrument tracks: their instrument channel) or
+    for mixer_channel (index, name or label of a channel that carries audio)."""
+    chans = _bridge("list_mixer", {}, wait).get("channels", [])
+    audio = [c for c in chans if c.get("channelType") != "MusicTrack"]
+    ref = a.get("mixer_channel")
+    if ref is not None:
+        if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
+            hits = [c for c in chans if c["index"] == int(ref)]
+        else:
+            hits = [c for c in audio if c.get("name") == ref] or [c for c in audio if c.get("label") == ref]
+    elif a.get("track") is not None:
+        t = _find_track(_tracks(wait), a["track"])
+        if t.get("channelType") == "MusicTrack":
+            hint = _instrument_channel_hint(t["index"], wait)
+            hits = [c for c in audio if c.get("channelType") == "AudioSynth" and c.get("name") == hint] if hint else []
+            if not hits:
+                raise ToolError("instrument channel of %r not found; pass mixer_channel from daw_list_mixer" % t["name"])
+        else:
+            hits = [c for c in audio if c.get("channelType") == "AudioTrack" and c.get("label") == t["name"]]
+    else:
+        raise ToolError("pass track or mixer_channel")
+    if len(hits) != 1:
+        raise ToolError("mixer channel %r matches %d channels; pass the index from daw_list_mixer"
+                        % (ref if ref is not None else a.get("track"), len(hits)))
+    return hits[0]
+
+
+_SEND_SLOTS = ["Send%02d" % i for i in range(1, 17)]
+
+
+def _sends_steps(index):
+    steps = _mixer_channel_steps(index, "ch") + [{"as": "sends", "on": {"var": "ch"}, "call": "find", "args": ["Sends"]}]
+    for s in _SEND_SLOTS:
+        steps.append({"as": s, "on": {"var": "sends"}, "call": "find", "args": [s], "names": ["name", "title"]})
+    return steps
+
+
+def _read_sends(index, wait):
+    """{slot name: title} of a channel's sends (slots Send01.., found by name; observed 2026-10-18)."""
+    res = _call(_sends_steps(index), wait, "read sends")
+    return {s: (r.get("props") or {}).get("title") for s, r in zip(_SEND_SLOTS, res[-len(_SEND_SLOTS):])
+            if r.get("value") is not None}
+
+
+def _send_param_steps(index, slot, level_db=None, pan=None):
+    steps = _mixer_channel_steps(index, "ch") + [
+        {"as": "sends", "on": {"var": "ch"}, "call": "find", "args": ["Sends"]},
+        {"as": "snd", "on": {"var": "sends"}, "call": "find", "args": [slot]},
+        {"as": "lv", "on": {"var": "snd"}, "call": "findParameter", "args": ["level"]},
+        {"as": "pn", "on": {"var": "snd"}, "call": "findParameter", "args": ["pan"]}]
+    if level_db is not None:  # level is linear gain 0..3.16 (+10 dB), shown in dB
+        steps.append({"on": {"var": "lv"}, "call": "setValue", "args": [10 ** (float(level_db) / 20.0), True]})
+    if pan is not None:
+        steps.append({"on": {"var": "pn"}, "call": "setValue", "args": [float(pan), True]})
+    steps += [{"as": "lv2", "on": {"var": "snd"}, "call": "findParameter", "args": ["level"], "names": ["string"]},
+              {"as": "pn2", "on": {"var": "snd"}, "call": "findParameter", "args": ["pan"], "names": ["string"]}]
+    return steps
+
+
+def _send_state(results):
+    return {"level_db": (results[-2].get("props") or {}).get("string"), "pan": (results[-1].get("props") or {}).get("string")}
+
+
+def _add_send(a, wait):
+    # Observed 2026-10-18: DeviceEditFunctions.insertDevice(channel.find("Sends"), effectClassID) creates an
+    # FX channel (channelType AudioEffect, labelled after the effect) and a send Send0N to it.
+    # connectChannel(sends, fxChannel[.input]) and insertDevice(sends, fxChannel) do nothing, so a send to an
+    # existing FX channel is not possible from a script.
+    class_id, effect = _effect_class(a["effect"])
+    ch = _audio_channel_index(a, wait)
+    before = _read_sends(ch["index"], wait)
+    steps = _mixer_channel_steps(ch["index"], "ch") + [
+        {"as": "sends", "on": {"var": "ch"}, "call": "find", "args": ["Sends"]},
+        {"as": "fx", "on": {"functions": "DeviceEditFunctions"}},
+        {"as": "slot", "on": {"var": "fx"}, "call": "insertDevice", "args": [{"var": "sends"}, class_id],
+         "names": ["name"]}]
+    res = _call(steps, wait, "add send")
+    if res[-1].get("value") is None:
+        raise ToolError("Studio One did not add the send (effect %s)" % effect)
+    after = _read_sends(ch["index"], wait)
+    new = [s for s in after if s not in before]
+    out = {"channel": ch["label"], "mixer_index": ch["index"], "effect": effect, "send": new[0] if new else None}
+    fx = [c for c in _bridge("list_mixer", {}, wait).get("channels", []) if c.get("channelType") == "AudioEffect"]
+    if fx:
+        out["fx_channel"] = {"label": fx[-1]["label"], "mixer_index": fx[-1]["index"]}
+    if new and a.get("level_db") is not None:
+        out.update(_send_state(_call(_send_param_steps(ch["index"], new[0], a["level_db"]), wait, "set send level")))
+    return out
+
+
+def _set_send(a, wait):
+    ch = _audio_channel_index(a, wait)
+    sends = _read_sends(ch["index"], wait)
+    if a.get("level_db") is None and a.get("pan") is None and a.get("send") is None:
+        out = []
+        for slot, title in sends.items():
+            out.append(dict({"send": int(slot[4:]), "slot": slot, "title": title},
+                            **_send_state(_call(_send_param_steps(ch["index"], slot), wait, "read send"))))
+        return {"channel": ch["label"], "sends": out}
+    slot = "Send%02d" % int(a.get("send") or 1)
+    if slot not in sends:
+        raise ToolError("%s has no send %s (sends: %s)" % (ch["label"], slot, ", ".join(sends) or "none"))
+    res = _call(_send_param_steps(ch["index"], slot, a.get("level_db"), a.get("pan")), wait, "set send")
+    return dict({"channel": ch["label"], "send": int(slot[4:]), "title": sends[slot]}, **_send_state(res))
+
+
 def _rename_track(track, name, wait):
     # Observed 0.7.2: track.name = .. is ignored, track.channel.label = .. renames the track (arrange and
     # mixer); an AudioSynth channel's label is writable the same way, and renaming it also renames the
@@ -889,6 +1102,9 @@ def call(name, a):
     if name == "song_add_loop":
         return _offline_edit(_song_path(a["path"]), lambda p: loops.add_loop(
             p, a["track"], a["loop"], a["start_beats"], a.get("length_beats")))
+    if name == "song_write_markers":
+        return _offline_edit(_song_path(a["path"]),
+                             lambda p: songwrite.write_markers(p, a["markers"], a.get("replace", True)))
     if name == "song_set_time_signatures":
         return _offline_edit(_song_path(a["path"]), lambda p: songwrite.write_time_signatures(p, a["signatures"]))
     if name == "song_remove_effect":
@@ -960,6 +1176,18 @@ def call(name, a):
         return {"installed": setup.source_version(), "log": log,
                 "next": "Ask the user to start Studio One and open a song, then call daw_ping."}
 
+    if name == "bridge_connect_client":
+        if not a.get("client"):
+            found = clients.detect()
+            return {"clients": [{"client": n, "title": c["title"], "found": found[n]} for n, c in clients.CLIENTS.items()],
+                    "server_command": clients.server_command()}
+        log = []
+        with contextlib.redirect_stdout(sys.stderr):
+            code = clients.connect(a["client"], a.get("remove", False), True, log=log.append)
+        if code:
+            raise ToolError("\n".join(log))
+        return {"log": log}
+
     if name == "daw_status":
         mb = Mailbox()
         status = mb.read_json("status.json")
@@ -1030,6 +1258,12 @@ def call(name, a):
         return _bridge("call", {"steps": a["steps"]}, wait)
     if name == "daw_list_mixer":
         return _bridge("list_mixer", {}, wait)
+    if name == "daw_set_loop":
+        return _set_loop(a, wait)
+    if name == "daw_add_send":
+        return _add_send(a, wait)
+    if name == "daw_set_send":
+        return _set_send(a, wait)
     if name == "daw_set_channel_param":
         args = {k: a[k] for k in ("track", "mixer_channel", "param", "value") if k in a}
         if "mixer_channel" not in args:

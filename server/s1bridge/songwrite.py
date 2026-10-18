@@ -177,3 +177,64 @@ def write_time_signatures(path, signatures):
     rewrite_zip(path, {"Song/song.xml": ("﻿" + xml).encode("utf-8")})
     return {"signatures": [{"bar": t, "beat": b, "time_signature": "%d/%d" % (n, d)} for b, n, d, t in segs],
             "backup": bak}
+
+
+def bar_to_beats(signatures, bar):
+    """Quarter notes from song start to the first beat of a 1-based bar.
+    signatures: Song.time_signatures() ([{start (quarter notes), numerator, denominator}])."""
+    sigs = sorted(signatures, key=lambda s: s["start"]) or [{"start": 0.0, "numerator": 4, "denominator": 4}]
+    beat, cur_bar, i = 0.0, 1, 0
+    cur = sigs[0]
+    while cur_bar < bar:
+        beat += cur["numerator"] * 4.0 / cur["denominator"]
+        cur_bar += 1
+        while i + 1 < len(sigs) and sigs[i + 1]["start"] <= beat + 1e-9:
+            i += 1
+            cur = sigs[i]
+    return beat
+
+
+def write_markers(path, markers, replace=True):
+    """Write named markers into the song's Marker Track. markers: [{"name", "bar" (1-based) or "beat"
+    (quarter notes from song start)}]. replace (default) drops the old named markers first; the song's
+    Start/End markers always stay. song.xml: MarkerTrack/MarkerEvent markerType="0" start name."""
+    import re
+    from xml.sax.saxutils import escape
+
+    def quoteattr(v):  # always double quotes, as Studio One writes them
+        return '"%s"' % escape(v, {'"': "&quot;"})
+    sigs = Song(path).time_signatures()
+    new = []
+    for m in markers:
+        name = str(m.get("name") or "").strip()
+        if not name:
+            raise SongWriteError("every marker needs a name")
+        if "beat" in m:
+            beat = float(m["beat"])
+        elif "bar" in m:
+            if int(m["bar"]) < 1:
+                raise SongWriteError("bar is 1-based: %s" % m["bar"])
+            beat = bar_to_beats(sigs, int(m["bar"]))
+        else:
+            raise SongWriteError("marker %r needs bar or beat" % name)
+        if beat < 0:
+            raise SongWriteError("marker %r starts before the song" % name)
+        new.append((beat, name))
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("Song/song.xml").decode("utf-8-sig")
+    m = re.search(r'(<MarkerTrack\b[^>]*?)(/>|>(.*?)(\s*)</MarkerTrack>)', xml, re.S)
+    if not m:
+        raise SongWriteError("song has no Marker Track")
+    head, body = m.group(1), m.group(3) or ""
+    if replace:  # named markers only; Start/End (markerType 2/3) and anything else stay as they are
+        body = re.sub(r'\s*<MarkerEvent\b(?=[^>]*markerType="0")[^>]*/>', "", body)
+    kept = len(re.findall(r'<MarkerEvent\b', body))
+    indent = "\n\t\t\t\t"
+    added = [indent + '<MarkerEvent markerType="0" start=%s timeFormat="2" name=%s/>'
+             % (quoteattr(("%.6f" % b).rstrip("0").rstrip(".")), quoteattr(n)) for b, n in sorted(new)]
+    block = head + ">" + body + "".join(added) + "\n\t\t\t</MarkerTrack>"
+    xml = xml[:m.start()] + block + xml[m.end():]
+    bak = backup(path)
+    rewrite_zip(path, {"Song/song.xml": ("﻿" + xml).encode("utf-8")})
+    return {"markers": [{"beat": b, "name": n} for b, n in sorted(new)],
+            "kept": kept, "replaced": replace, "backup": bak}
