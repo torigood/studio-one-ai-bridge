@@ -173,7 +173,7 @@ def manifest(version, bundled=True):
                 "required": False,
             },
         },
-        "tools": [{"name": t["name"], "description": first_sentence(t["description"])} for t in tools.TOOLS],
+        "tools": [{"name": t["name"], "description": first_sentence(t["description"])} for t in tools.listed_tools(dev=False)],
         "compatibility": dict({"platforms": ["darwin"]}, **({} if bundled else {"runtimes": {"python": ">=3.9"}})),
     }
 

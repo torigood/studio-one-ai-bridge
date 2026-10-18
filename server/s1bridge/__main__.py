@@ -13,6 +13,16 @@ import traceback
 from . import tools
 
 SERVER_INFO = {"name": "studio-one-ai-bridge", "version": "0.5.1"}  # keep equal to pyproject.toml
+INSTRUCTIONS = (
+    "Studio One 5 bridge. daw_* tools act live on the open song through the in-DAW bridge (check daw_status "
+    "first); song_* tools work on saved .song files. Conventions for all tools: song = absolute .song path "
+    "(song_list). track = exact track name or 0-based index. wait = seconds to wait for the bridge (default "
+    "10). beat = quarter notes from song start (0 = bar 1); bar = 1-based. Instrument tracks have no mixer "
+    "channel of their own: channel tools use their instrument output channel. replace (default true) drops "
+    "old content in the written range. song_write_*/song_add_*/song_set_*/song_remove_* edit the file: if the "
+    "song is open it is saved, closed, edited and reopened automatically (~8 s, undo history lost), and the "
+    "original is backed up first."
+)
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 
@@ -37,7 +47,24 @@ def _reply(msg_id, result=None, error=None):
     sys.stdout.flush()
 
 
-def handle(msg):
+def _remote_call(name, args):
+    if name in tools.REMOTE_HIDDEN:
+        raise tools.ToolError("%s is not available over a shared URL; use it from an app on this Mac" % name)
+    if name == "bridge_share":
+        from . import share
+        if args.get("action") == "off":
+            share.stop_soon()  # after this reply has gone out: stopping ends this process
+            return {"sharing": "stopping", "note": "This chat loses the Studio One tools in a few seconds. "
+                    "Turn sharing on again on the Mac (Claude: 'share Studio One', or: share --enable)."}
+        if args.get("action") != "status":
+            raise tools.ToolError("sharing can only be stopped or checked from here")
+        st = share.status()
+        return {"sharing": st["running"], "start_at_login": st["start_at_login"], "provider": st["provider"]}
+    return tools.call(name, args)
+
+
+def handle(msg, remote=False):
+    """remote: the request came over the shared HTTPS URL (httpserver.py), not from a local app."""
     method = msg.get("method")
     params = msg.get("params") or {}
     if method == "initialize":
@@ -46,18 +73,22 @@ def handle(msg):
             "protocolVersion": requested if requested in SUPPORTED else SUPPORTED[0],
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": SERVER_INFO,
-            "instructions": "Studio One 5 bridge. song_* tools read saved songs offline. daw_* tools act on "
-                            "the open song through the in-DAW bridge; check daw_status first.",
+            "instructions": INSTRUCTIONS,
         }
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": tools.TOOLS}
+        return {"tools": tools.listed_tools(remote)}
     if method == "tools/call":
         name = params.get("name")
+        args = params.get("arguments") or {}
         try:
-            data = tools.call(name, params.get("arguments") or {})
-            text = json.dumps(_clean(data), ensure_ascii=False, indent=1)
+            if remote:
+                data = _remote_call(name, args)
+            else:
+                data = tools.call(name, args)
+            # compact JSON: indentation costs tokens on every result
+            text = json.dumps(_clean(data), ensure_ascii=False, separators=(",", ":"))
             return {"content": [{"type": "text", "text": text}], "isError": False}
         except tools.ToolError as e:
             return {"content": [{"type": "text", "text": str(e)}], "isError": True}

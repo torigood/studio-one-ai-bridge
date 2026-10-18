@@ -55,7 +55,7 @@ class McpbTests(unittest.TestCase):
     def test_manifest_lists_every_tool(self):
         with zipfile.ZipFile(self.out) as z:
             m = json.loads(z.read("manifest.json"))
-        self.assertEqual([t["name"] for t in m["tools"]], [t["name"] for t in tools.TOOLS])
+        self.assertEqual([t["name"] for t in m["tools"]], [t["name"] for t in tools.listed_tools(dev=False)])
         self.assertTrue(all(t["description"] for t in m["tools"]))
 
     def test_server_version_matches_project(self):

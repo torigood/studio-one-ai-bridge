@@ -47,6 +47,29 @@ class HttpServer(unittest.TestCase):
         names = [t["name"] for t in body["result"]["tools"]]
         self.assertIn("daw_ping", names)
 
+    def test_remote_lockdown(self):
+        _, body, _ = self.post({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        tools = {t["name"]: t for t in body["result"]["tools"]}
+        self.assertNotIn("bridge_setup", tools)
+        self.assertNotIn("bridge_connect_client", tools)
+        self.assertNotIn("daw_probe", tools)  # development tool, hidden by default
+        self.assertEqual(tools["bridge_share"]["inputSchema"]["properties"]["action"]["enum"], ["off", "status"])
+        for name, args in (("bridge_setup", {}), ("bridge_connect_client", {"client": "codex"}),
+                           ("bridge_share", {"action": "on"})):
+            _, body, _ = self.post({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                    "params": {"name": name, "arguments": args}})
+            self.assertTrue(body["result"]["isError"], name)
+
+    def test_remote_share_off_replies_first(self):
+        from s1bridge import share
+        from unittest import mock
+        with mock.patch.object(share, "stop_soon") as stop:
+            _, body, _ = self.post({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                    "params": {"name": "bridge_share", "arguments": {"action": "off"}}})
+        self.assertFalse(body["result"]["isError"])
+        self.assertIn("stopping", body["result"]["content"][0]["text"])
+        stop.assert_called_once_with()
+
     def test_notification_and_batch(self):
         status, body, _ = self.post({"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.assertEqual((status, body), (202, None))

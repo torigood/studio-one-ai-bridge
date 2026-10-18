@@ -36,7 +36,7 @@ def respond(msg):
         return None
     try:
         with _lock:
-            return {"jsonrpc": "2.0", "id": msg["id"], "result": handle(msg)}
+            return {"jsonrpc": "2.0", "id": msg["id"], "result": handle(msg, remote=True)}
     except KeyError:
         return _error(msg["id"], -32601, "method not found: %s" % msg.get("method"))
     except Exception as e:  # report, keep serving

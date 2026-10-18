@@ -409,6 +409,17 @@ def disable():
         os.remove(PLIST)
 
 
+def stop_soon(delay=2.0):
+    """Stop sharing shortly, from inside the shared server (ChatGPT asked): the reply goes out first.
+    Background: bootout ends this process. In a terminal: SIGTERM ends run() like Ctrl+C."""
+    def stop():
+        disable()
+        os.kill(os.getpid(), signal.SIGTERM)
+    t = threading.Timer(delay, stop)
+    t.daemon = True
+    t.start()
+
+
 def status():
     s = load_settings()
     st = read_state()

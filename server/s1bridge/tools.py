@@ -58,15 +58,20 @@ def _load_catalog():
 
 
 def _schema(props, required=()):
-    return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
+    s = {"type": "object", "properties": props, "additionalProperties": False}
+    if required:
+        s["required"] = list(required)
+    return s
 
 
 _S = {"type": "string"}
 _N = {"type": "number"}
 _I = {"type": "integer"}
-_SONG = {"type": "string", "description": "Absolute path to a .song file (see song_list)."}
-_TRACK = {"type": ["string", "integer"], "description": "Track name (exact) or 0-based index."}
-_WAIT = {"type": "number", "description": "Seconds to wait for the bridge (default 10)."}
+# Shared argument conventions are explained once in the server instructions (__main__.INSTRUCTIONS)
+# instead of in every schema: song, track, wait, beat/bar, replace, offline writes.
+_SONG = {"type": "string"}
+_TRACK = {"type": ["string", "integer"]}
+_WAIT = {"type": "number"}
 
 TOOLS = [
     # ---- offline -----------------------------------------------------------
@@ -88,10 +93,9 @@ TOOLS = [
                     "Use class_id with daw_insert_effect.",
      "inputSchema": _schema({})},
     {"name": "library_plugin_params",
-     "description": "Parameters of a plug-in for daw_plugin_param. Studio One native plug-ins (Pro EQ, Room Reverb, "
-                    "Mojito, ...): IDs and value ranges from factory presets, plus preset names. Third-party VST3 "
-                    "(Vital, Surge XT, BBC Symphony Orchestra, ...): 'vstp<id>' names with titles, filtered by query "
-                    "words (e.g. 'filter 1 cutoff'); needs the dump from python3 -m s1bridge.vst3params.",
+     "description": "Parameters of a plug-in for daw_plugin_param. Native (Pro EQ, Room Reverb, Mojito...): IDs and "
+                    "ranges from factory presets, plus preset names. VST3 (Vital, Surge XT...): 'vstp<id>' with titles, "
+                    "filtered by query words (e.g. 'filter 1 cutoff'); needs python3 -m s1bridge.vst3params once.",
      "inputSchema": _schema({"plugin": _S, "query": _S, "limit": _I}, ["plugin"])},
     {"name": "song_summary",
      "description": "Read a saved .song: tempo, time signature, markers, tracks with folder, "
@@ -102,49 +106,37 @@ TOOLS = [
                     "pitch is MIDI number; velocity 0..1.",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK}, ["path", "track"])},
     {"name": "song_write_cc",
-     "description": "Write MIDI CC points (e.g. 1 modulation, 11 expression, 64 sustain) into an instrument part of a "
-                    "saved .song. If the song is open in Studio One it is saved, closed, written and reopened "
-                    "automatically (a few seconds; undo history is lost). beat = quarter notes from song start, value 0..127; points are joined by ramps unless "
-                    "step is true. The part is the one containing the first point unless part (0-based) is given. "
-                    "replace (default true) drops the lane's old points between the first and last new point. "
-                    "The original file is backed up first.",
+     "description": "Write MIDI CC points (1 modulation, 11 expression, 64 sustain...) into an instrument part: [{beat, "
+                    "value 0..127}], joined by ramps unless step=true. The part is the one containing the first point "
+                    "unless part (0-based) is given.",
      "inputSchema": _schema({
          "path": _SONG, "track": _TRACK, "cc": _I, "part": _I,
          "points": {"type": "array", "items": _schema({"beat": _N, "value": _N}, ["beat", "value"])},
          "replace": {"type": "boolean"}, "step": {"type": "boolean"}},
          ["path", "track", "cc", "points"])},
     {"name": "song_add_loop",
-     "description": "Place a Sound Set .audioloop (path or file name from library_loops) on an existing AUDIO track "
-                    "of a saved .song from start_beats (quarter notes from song start), repeated to fill "
-                    "length_beats (default one loop; the last copy is cut). If the song is open in Studio One it is "
-                    "saved, closed, written and reopened automatically. Needs the loop length index (loop_beats in library_loops). "
-                    "The original file is backed up first.",
+     "description": "Place a Sound Set .audioloop (path or name from library_loops; needs loop_beats there) on an "
+                    "existing AUDIO track from start_beats, repeated to fill length_beats (default one loop; the last "
+                    "copy is cut).",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK, "loop": _S, "start_beats": _N, "length_beats": _N},
                             ["path", "track", "loop", "start_beats"])},
     {"name": "song_set_time_signatures",
-     "description": "Replace the time signature map of a saved .song: [{bar (1-based, first must be 1), numerator, "
-                    "denominator 2|4|8|16}]. If the song is open it is saved, closed, written and reopened automatically.",
+     "description": "Replace the time signature map: [{bar (first must be 1), numerator, denominator 2|4|8|16}].",
      "inputSchema": _schema({"path": _SONG, "signatures": {"type": "array", "items": _schema(
          {"bar": _I, "numerator": _I, "denominator": _I}, ["bar", "numerator", "denominator"])}},
          ["path", "signatures"])},
     {"name": "song_write_chords",
-     "description": "Write chords into the Chord Track of a saved .song: [{beat, length, chord}] with beat/length in "
-                    "quarter notes and chord names like C, Am7, F#m7b5, Gsus4, Bbmaj7, Dadd9, C/E (slash bass). Names as "
-                    "daw_read_chords prints them (F♯ø7, B♭maj7, C°7) are accepted too. "
-                    "replace (default true) removes old chords overlapping the written range. If the song is open "
-                    "it is saved, closed, written and reopened automatically. The song needs a Chord Track.",
+     "description": "Write chords into the Chord Track (the song needs one): [{beat, length, chord}], chord like C, Am7, "
+                    "F#m7b5, Gsus4, Bbmaj7, Dadd9, C/E; daw_read_chords spellings (F♯ø7, B♭maj7, C°7) work too.",
      "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
                              "chords": {"type": "array", "items": _schema({"beat": _N, "length": _N, "chord": _S},
                                                                           ["beat", "length", "chord"])}},
                             ["path", "chords"])},
     {"name": "song_write_automation",
-     "description": "Write mixer automation for a track of a saved .song (instrument tracks: their instrument "
-                    "channel): param volume (value in dB, '-inf' = silence, max +10), pan (-1 left .. 1 right) or "
-                    "mute (0/1). points: [{bar (1-based) or beat (quarter notes from song start), value}], joined by "
-                    "straight lines (a jump = two points close together, e.g. beat 16 and 16.01). Fades: two points. "
-                    "replace (default true) drops old points between the first and last new point. The channel is "
-                    "set to automation Read so it plays (automation only applies while the song plays). If the "
-                    "song is open it is saved, closed, written and reopened automatically; backed up first.",
+     "description": "Write mixer automation for a track: param volume (dB, '-inf' = silence, max +10), pan (-1..1) or "
+                    "mute (0/1). points [{bar or beat, value}] joined by straight lines (a jump = two close points, e.g. "
+                    "beat 16 and 16.01; a fade = two points). Sets the channel to automation Read (plays only while the "
+                    "song runs).",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK,
                              "param": {"type": "string", "enum": ["volume", "pan", "mute"]},
                              "points": {"type": "array", "items": {
@@ -152,18 +144,13 @@ TOOLS = [
                                  "required": ["value"], "additionalProperties": False}},
                              "replace": {"type": "boolean"}}, ["path", "track", "param", "points"])},
     {"name": "song_add_send",
-     "description": "Add a send from a track's channel (instrument tracks: their instrument channel) or a mixer "
-                    "channel to an EXISTING FX channel or bus (destination = its label, e.g. 'Room Reverb') in a saved "
-                    ".song, so several tracks can share one reverb. level_db (default -6), pan -1 (left) .. 1 (right), "
-                    "prefader. If the song is open it is saved, closed, written and reopened automatically.",
+     "description": "Add a send from a track or mixer channel to an EXISTING FX channel or bus (destination = its label, "
+                    "e.g. 'Room Reverb'), so tracks share one reverb. level_db (default -6), pan -1..1, prefader.",
      "inputSchema": _schema({"path": _SONG, "destination": _S, "track": _TRACK, "mixer_channel": _S,
                              "level_db": _N, "pan": _N, "prefader": {"type": "boolean"}}, ["path", "destination"])},
     {"name": "song_write_sections",
-     "description": "Write arranger sections (song structure blocks: Intro, Verse, Chorus...) into the Arranger "
-                    "Track of a saved .song and show the track: [{name, bar (1-based) or beat, and bars (length), "
-                    "beats or end_bar}]. Sections may not overlap. replace (default true) removes the old sections. "
-                    "In Studio One a section can then be moved or copied with all its parts. If the song is open it "
-                    "is saved, closed, written and reopened automatically. Read them back with song_summary.",
+     "description": "Write arranger sections (Intro, Verse, Chorus...) into the Arranger Track: [{name, bar or beat, and "
+                    "bars, beats or end_bar}], no overlaps. A section can then be moved or copied with all its parts.",
      "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
                              "sections": {"type": "array", "items": {
                                  "type": "object", "properties": {"name": _S, "bar": _I, "beat": _N, "bars": _I,
@@ -171,10 +158,8 @@ TOOLS = [
                                  "required": ["name"], "additionalProperties": False}}},
                             ["path", "sections"])},
     {"name": "song_write_markers",
-     "description": "Write named markers (song sections like Intro, Verse, Chorus) into the Marker Track of a saved "
-                    ".song: [{name, bar (1-based)} or {name, beat (quarter notes from song start)}]. replace (default "
-                    "true) removes the old named markers first; Start/End stay. If the song is open it is saved, "
-                    "closed, written and reopened automatically. Read them back with song_summary (markers).",
+     "description": "Write named markers (Intro, Verse, Chorus...) into the Marker Track: [{name, bar or beat}]. replace "
+                    "removes old named markers; Start/End stay. Read back with song_summary.",
      "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
                              "markers": {"type": "array", "items": {
                                  "type": "object", "properties": {"name": _S, "bar": _I, "beat": _N},
@@ -185,9 +170,8 @@ TOOLS = [
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
      "inputSchema": _schema({"path": _S, "start_sec": _N, "length_sec": _N}, ["path"])},
     {"name": "song_analyze",
-     "description": "Musical overview of a saved .song for arranging: tempo/time signature, key estimated from all "
-                    "notes, per-track note range and key, and audio analysis of the audio tracks' files "
-                    "(first 120 s of up to 6 files). Read-only.",
+     "description": "Musical overview for arranging: tempo, time signature, key from all notes, per-track range and key, "
+                    "audio analysis of audio tracks (first 120 s of up to 6 files).",
      "inputSchema": _schema({"path": _SONG, "audio": {"type": "boolean"}}, ["path"])},
     {"name": "commands_search",
      "description": "Search Studio One commands (category/name/args) known from shipped files. "
@@ -195,32 +179,25 @@ TOOLS = [
      "inputSchema": _schema({"query": _S, "category": _S, "limit": _I})},
     # ---- install -----------------------------------------------------------
     {"name": "bridge_doctor",
-     "description": "Check the Studio One side of the bridge: Studio One found, extension installed and its version, "
-                    "control surface, device registration, MIDI port, mailbox, a ping when Studio One runs, catalog, "
-                    "numpy. Each failed check has a fix. Run it when daw_* tools do not answer or fail, or before "
-                    "bridge_setup.",
+     "description": "Check every piece of the Studio One side (app, extension version, surface, device, MIDI port, "
+                    "mailbox, ping, catalog, numpy), each failure with a fix. Run it when daw_* tools fail.",
      "inputSchema": _schema({})},
     {"name": "bridge_setup",
-     "description": "Install or update the Studio One side of the bridge: writes the extension, the control surface "
-                    "and its device entry into Studio One's settings folder (backed up first), builds the command "
-                    "catalog and starts the MIDI port. Studio One must not be running: ask the user to save their "
-                    "song and quit Studio One first. Afterwards the user starts Studio One and opens a song; then "
-                    "daw_ping should answer. catalog=false skips the command catalog.",
+     "description": "Install or update the Studio One side (extension, control surface, device entry, command catalog, "
+                    "MIDI port; backed up first). Studio One must be quit: ask the user to save and quit it first, then "
+                    "to start it and open a song, and call daw_ping. catalog=false skips the catalog.",
      "inputSchema": _schema({"catalog": {"type": "boolean"}})},
     {"name": "bridge_connect_client",
-     "description": "Register this Studio One server with another AI app on this Mac so it can use these tools too: "
-                    "claude-code, codex (OpenAI, included with ChatGPT plans), gemini (Gemini CLI), cursor, lmstudio, "
-                    "vscode, or claude-desktop (only without this extension). Without client it lists which apps "
-                    "were found. remove=true unregisters. The app must be restarted afterwards. The ChatGPT chat app "
-                    "itself cannot start local servers; suggest Codex instead.",
+     "description": "Register this server with another AI app on this Mac (claude-code, codex, gemini, cursor, lmstudio, "
+                    "vscode, claude-desktop only without this extension); the app must be restarted. Without client: list"
+                    " the apps found. remove=true unregisters. The ChatGPT chat app needs bridge_share instead.",
      "inputSchema": _schema({"client": {"type": "string", "enum": sorted(clients.CLIENTS)},
                              "remove": {"type": "boolean"}})},
     {"name": "bridge_share",
-     "description": "Share these Studio One tools with the ChatGPT chat app (which needs a public HTTPS address) "
-                    "in the background: action on (now and at every login), off (stop, also at login) or status. "
-                    "The connector URL contains a secret that gives control of Studio One; it is returned only "
-                    "with show_url=true, so ask the user before showing it. ChatGPT: Settings > Apps & "
-                    "Connectors > Developer mode > Create, server URL = that URL, authentication none.",
+     "description": "Share these tools with the ChatGPT chat app over a public HTTPS address, in the background: on (now "
+                    "and at every login), off, status. The connector URL holds a secret that controls Studio One; it is "
+                    "returned only with show_url=true, so ask the user first. ChatGPT: Settings > Apps & Connectors > "
+                    "Developer mode > Create, URL = that URL, authentication none.",
      "inputSchema": _schema({"action": {"type": "string", "enum": ["on", "off", "status"]},
                              "show_url": {"type": "boolean"}}, ["action"])},
     # ---- live (bridge) -----------------------------------------------------
@@ -229,38 +206,31 @@ TOOLS = [
                     "installed bridge matches this server (problem says what to do if not).",
      "inputSchema": _schema({})},
     {"name": "daw_set_loop",
-     "description": "Set the loop (cycle) range of the open song and turn looping on or off. start_bar/end_bar are "
-                    "1-based bars (end_bar is where the loop ends, e.g. 5 to 9 loops bars 5-8; bars assume the time "
-                    "signature at the playhead, pass start_beat/end_beat in quarter notes for songs with signature "
-                    "changes). Omit the range to only switch looping with enabled.",
+     "description": "Set the loop range and turn looping on or off. start_bar/end_bar 1-based, end exclusive (5 to 9 "
+                    "loops bars 5-8); with time signature changes pass start_beat/end_beat. No range: only switch "
+                    "enabled.",
      "inputSchema": _schema({"start_bar": _I, "end_bar": _I, "start_beat": _N, "end_beat": _N,
                              "enabled": {"type": "boolean"}, "wait": _WAIT})},
     {"name": "daw_add_send",
-     "description": "Add an effect send: creates a new FX channel with the effect (e.g. Room Reverb, Analog Delay; "
-                    "effect = name or class_id from library_effects) and a send to it from the track's channel "
-                    "(instrument tracks: their instrument channel) or a mixer channel. level_db sets the send level "
-                    "(Studio One's default is -6 dB). Each call makes a new FX channel; to send more tracks to an FX "
-                    "channel that already exists use song_add_send.",
+     "description": "Create a new FX channel with an effect (name or class_id from library_effects, e.g. Room Reverb) and"
+                    " a send to it from a track or mixer channel; level_db (Studio One default -6). For more sends to an "
+                    "FX channel that exists, use song_add_send.",
      "inputSchema": _schema({"effect": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "level_db": _N, "wait": _WAIT}, ["effect"])},
     {"name": "daw_add_bus",
-     "description": "Group channels into a new bus (e.g. all drums): creates a bus channel, routes the outputs of the "
-                    "given tracks (instrument tracks: their instrument channel) and/or mixer channels into it, and "
-                    "routes the bus to where the first channel went before (usually Main). name labels the bus.",
+     "description": "Group channels into a new bus (e.g. drums): routes the given tracks and/or mixer channels into it "
+                    "and the bus to where the first one went (usually Main). name labels the bus.",
      "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK},
                              "mixer_channels": {"type": "array", "items": {"type": ["string", "integer"]}},
                              "name": _S, "wait": _WAIT})},
     {"name": "daw_set_output",
-     "description": "Route a track's channel (instrument tracks: their instrument channel) or a mixer channel to "
-                    "another channel's input: an existing bus (from daw_add_bus), an FX channel, or 'Main' for the main "
-                    "output. destination = 'Main' or an index, name or label from daw_list_mixer. Without destination it reads the output.",
+     "description": "Route a track or mixer channel's output to a bus (daw_add_bus), an FX channel or 'Main'. destination"
+                    " = 'Main' or index/name/label from daw_list_mixer; omit to read the output.",
      "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "destination": {"type": ["string", "integer"]}, "wait": _WAIT})},
     {"name": "daw_set_send",
-     "description": "Read or set a send of a track's channel (instrument tracks: their instrument channel) or a mixer "
-                    "channel: send = 1-based send number (default 1), level_db and/or pan (0..1, 0.5 = centre; as on "
-                    "channels, values below 0.5 pan RIGHT: 0.3 shows R40). "
-                    "Omit both to read the channel's sends.",
+     "description": "Read or set send number send (1-based, default 1) of a track or mixer channel: level_db and/or pan "
+                    "(0..1, below 0.5 = RIGHT). Omit both to read the sends.",
      "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]}, "send": _I,
                              "level_db": _N, "pan": _N, "wait": _WAIT})},
     {"name": "daw_ping", "description": "Round-trip test through the bridge.",
@@ -295,14 +265,12 @@ TOOLS = [
                              "path": {"type": "array"}, "names": {"type": "array", "items": _S},
                              "wait": _WAIT}, ["root"])},
     {"name": "daw_list_events",
-     "description": "Events (parts/audio clips) on a track of the open song, sorted by start: index, name, start, "
-                    "length, offset (audio: speed, tune). index is what daw_call's {event: {track, index}} and "
-                    "daw_delete_event refer to (not the sorted position).",
+     "description": "Events (parts, audio clips) on a track sorted by start: index, name, start, length, offset (audio: "
+                    "speed, tune). index is what daw_delete_event and daw_call refer to.",
      "inputSchema": _schema({"track": _TRACK, "wait": _WAIT}, ["track"])},
     {"name": "daw_edit_event",
-     "description": "Move (move_to = new start in beats), resize (length in beats) or mute/unmute an event "
-                    "(instrument part or audio clip) on a track of the open song, picked by start_beats or index "
-                    "(daw_list_events). Notes inside a part move with it.",
+     "description": "Move (move_to), resize (length) or mute/unmute an event picked by start_beats or index "
+                    "(daw_list_events). Notes move with their part.",
      "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "index": _I, "move_to": _N, "length": _N,
                              "mute": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
     {"name": "daw_delete_track",
@@ -313,27 +281,22 @@ TOOLS = [
                     "labelled like the track, that mixer channel is renamed too. Not undoable with Edit/Undo.",
      "inputSchema": _schema({"track": _TRACK, "name": _S, "wait": _WAIT}, ["track", "name"])},
     {"name": "daw_duplicate_track",
-     "description": "Duplicate a track of the open song: a new track at the end of the track list, same "
-                    "instrument (shared, not a second instance), with copies of all its parts/clips unless "
-                    "events=false (about 2 s per event). Returns the new track's index and name (Studio One appends "
-                    "' 2'); name renames it. Adds several undo steps and changes the selection.",
+     "description": "Duplicate a track: new track at the end, same (shared) instrument, copies of all parts/clips unless "
+                    "events=false (~2 s per event). name renames the copy (default: Studio One appends ' 2').",
      "inputSchema": _schema({"track": _TRACK, "name": _S, "events": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
     {"name": "daw_delete_event",
-     "description": "Delete the event (instrument part or audio clip) that starts at start_beats on a track of the "
-                    "open song, or the one at index (daw_list_events). all=true deletes every event starting there. "
-                    "Undoable with Edit/Undo.",
+     "description": "Delete the event starting at start_beats on a track, or the one at index (daw_list_events); all=true"
+                    " deletes every event starting there. Undoable.",
      "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "index": _I, "all": {"type": "boolean"},
                              "wait": _WAIT}, ["track"])},
     {"name": "daw_read_notes",
-     "description": "Notes of the instrument parts on a track of the open song (live, no save needed). Per part: "
-                    "start/length (beats), notes with index, pitch, velocity 0..1, start/length relative to the part, "
-                    "beat = song position. part_start limits to one part.",
+     "description": "Notes of the instrument parts on a track (live): per part start/length, notes with index, pitch, "
+                    "velocity 0..1, start/length relative to the part. part_start limits to one part.",
      "inputSchema": _schema({"track": _TRACK, "part_start": _N, "wait": _WAIT}, ["track"])},
     {"name": "daw_edit_notes",
-     "description": "Edit the part that starts at part_start on a track of the open song. edits: [{index (from "
-                    "daw_read_notes), pitch?, velocity? 0..1, start? (beats from part start), length?, delete?}]. "
-                    "add: [{pitch, start, length, velocity?}] new notes, start relative to the part. Indexes refer to "
-                    "the order before this call.",
+     "description": "Edit the part starting at part_start: edits [{index (daw_read_notes), pitch?, velocity? 0..1, "
+                    "start?, length?, delete?}], add [{pitch, start, length, velocity?}]; starts relative to the part. "
+                    "Indexes refer to the order before this call.",
      "inputSchema": _schema({"track": _TRACK, "part_start": _N,
                              "edits": {"type": "array", "items": _schema(
                                  {"index": _I, "pitch": _I, "velocity": _N, "start": _N, "length": _N,
@@ -349,24 +312,21 @@ TOOLS = [
      "description": "Tempo, time signature, playhead, loop range of the open song (transport panel).",
      "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_set_tempo",
-     "description": "Set the song tempo in BPM (changes the tempo segment at bar 1; for a song with one tempo "
-                    "that is the whole song). Tempo changes later in the song cannot be added this way.",
+     "description": "Set the song tempo in BPM (the tempo at bar 1, the whole song if it has one tempo). For tempo "
+                    "changes later in the song use song_set_tempo_map.",
      "inputSchema": _schema({"bpm": _N, "wait": _WAIT}, ["bpm"])},
     {"name": "daw_set_position",
      "description": "Move the playhead to a bar (1-based) and optional beat (1-based).",
      "inputSchema": _schema({"bar": _I, "beat": _I, "wait": _WAIT}, ["bar"])},
     {"name": "daw_bounce",
-     "description": "Render a track's instrument parts (or the part starting at part_start) to audio and analyze it "
-                    "(level, spectrum, key, tempo; same as audio_analyze) so the result can be checked. By default "
-                    "the bounced track is removed and the original parts unmuted again; keep=true leaves the bounced "
-                    "audio track (originals muted). The WAV stays in the song's Bounces folder.",
+     "description": "Render a track's instrument parts (or the part at part_start) to audio and analyze it like "
+                    "audio_analyze. The bounced track is removed and the originals unmuted unless keep=true. The WAV "
+                    "stays in the song's Bounces folder.",
      "inputSchema": _schema({"track": _TRACK, "part_start": _N, "keep": {"type": "boolean"},
                              "analyze": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
     {"name": "daw_repeat_event",
-     "description": "Repeat an event (audio loop or instrument part) on a track of the open song: the event that "
-                    "starts at start_beats is copied times times back to back after itself (Edit > Duplicate; "
-                    "shared=true uses Duplicate Shared). Live counterpart of song_add_loop's repeat for loops "
-                    "already in the song; it cannot bring in a new loop file. Changes the selection.",
+     "description": "Repeat the event (loop or part) starting at start_beats times times back to back (Edit > Duplicate; "
+                    "shared=true: Duplicate Shared). Cannot bring in a new loop file (song_add_loop does).",
      "inputSchema": _schema({"track": _TRACK, "start_beats": _N, "times": _I, "shared": {"type": "boolean"},
                              "wait": _WAIT}, ["track", "start_beats"])},
     {"name": "daw_call",
@@ -381,29 +341,26 @@ TOOLS = [
                     "Instrument tracks (MusicTrack) have no volume/pan; their sound goes through an AudioSynth channel.",
      "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_set_channel_param",
-     "description": "Set a mixer parameter. volume: linear gain, 1.0 = 0 dB. pan: 0..1, 0.5 = centre; observed 0.25 shows R50 in the mixer, so values below 0.5 pan RIGHT. "
-                    "Also mute, solo, recordArmed, monitor (0/1), automationMode (0 Off, 1 Read, 2 Touch, 3 Latch, 4 Write). For an instrument track, volume/pan go to its "
-                    "instrument output channel, found from the saved song, else the instrument channel labelled "
-                    "like the track, else by saving the song (File > Save) and reading it again. If none works "
-                    "(song never saved), pass mixer_channel (index, name or label from daw_list_mixer) instead.",
+     "description": "Set a mixer parameter: volume (linear gain, 1.0 = 0 dB), pan (0..1, 0.5 centre, below 0.5 = RIGHT), "
+                    "mute, solo, recordArmed, monitor (0/1), automationMode (0 Off, 1 Read, 2 Touch, 3 Latch, 4 Write). "
+                    "If an instrument track's channel cannot be found (song never saved), pass mixer_channel from "
+                    "daw_list_mixer.",
      "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "param": _S, "value": _N, "wait": _WAIT}, ["param", "value"])},
     {"name": "daw_add_instrument",
      "description": "Load an instrument plug-in (class_id from library_instruments) and connect it to a track. "
-                    "Without track, a new instrument track (optional name) is created. EXPERIMENTAL.",
+                    "Without track, a new instrument track (optional name) is created.",
      "inputSchema": _schema({"class_id": _S, "track": _TRACK, "name": _S, "wait": _WAIT}, ["class_id"])},
     {"name": "daw_insert_effect",
-     "description": "Insert an audio effect (class_id from library_effects) on a track's channel or a mixer channel. "
-                    "For instrument tracks it goes on the instrument output channel (needs the song saved, or "
-                    "mixer_channel). Returns the insert slot name for daw_plugin_param. EXPERIMENTAL.",
+     "description": "Insert an effect (class_id from library_effects) on a track or mixer channel. Returns the slot for "
+                    "daw_plugin_param. If an instrument track's channel is not found, pass mixer_channel.",
      "inputSchema": _schema({"class_id": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "wait": _WAIT}, ["class_id"])},
     {"name": "daw_plugin_param",
-     "description": "Read or set a plug-in parameter. Instrument: instrument_slot (e.g. 'Inst04' from "
-                    "daw_add_instrument). Effect: track or mixer_channel plus slot (from daw_insert_effect). "
-                    "param: ID from library_plugin_params ('vstp123' for VST3), or a VST3 parameter title together with "
-                    "plugin (e.g. plugin 'Vital', param 'Filter 1 Cutoff'). Set with display (text in the plug-in's own units, e.g. '6' "
-                    "for 6 dB, '80 Hz', '25 %'; recommended) or normalized (0..1). Omit both to read.",
+     "description": "Read or set a plug-in parameter. Instrument: instrument_slot ('Inst04', from daw_list_instruments). "
+                    "Effect: track or mixer_channel plus slot (daw_list_effects). param: ID from library_plugin_params "
+                    "('vstp123' for VST3) or a VST3 title with plugin (plugin 'Vital', param 'Filter 1 Cutoff'). Set with"
+                    " display (plug-in units: '6', '80 Hz', '25 %'; preferred) or normalized (0..1); omit both to read.",
      "inputSchema": _schema({"instrument_slot": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "slot": _S, "param": _S, "plugin": _S,
                              "display": {"type": ["string", "number"]}, "normalized": _N,
@@ -423,10 +380,8 @@ TOOLS = [
      "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]}, "slot": _S,
                              "bypass": {"type": "boolean"}, "wait": _WAIT}, ["slot"])},
     {"name": "song_remove_effect",
-     "description": "Remove an insert effect from a track's channel (instrument tracks: their instrument output "
-                    "channel) or a mixer channel of a saved .song, by slot (FX02, from daw_list_effects) or plug-in "
-                    "name. Studio One's script API cannot remove devices, so if the song is open it is saved, closed, "
-                    "edited and reopened automatically (undo history is lost). The original file is backed up first.",
+     "description": "Remove an insert effect from a track's or mixer channel by slot (FX02, from daw_list_effects) or "
+                    "plug-in name (Studio One's script API cannot remove devices live).",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK, "mixer_channel": _S, "slot": _S, "plugin": _S},
                             ["path"])},
     {"name": "daw_list_instruments",
@@ -434,8 +389,7 @@ TOOLS = [
      "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_insert_notes",
      "description": "Create a new instrument part on a track and fill it with notes. "
-                    "start_beats/length_beats in quarter notes; note start is relative to the part. "
-                    "EXPERIMENTAL until verified in Studio One.",
+                    "start_beats/length_beats in quarter notes; note start is relative to the part.",
      "inputSchema": _schema({
          "track": _TRACK, "start_beats": _N, "length_beats": _N,
          "notes": {"type": "array", "items": _schema(
@@ -449,6 +403,29 @@ TOOLS = [
      "description": "Ask the bridge to write host-api.json (Studio One scripting API discovery).",
      "inputSchema": _schema({"wait": _WAIT})},
 ]
+
+
+# API discovery tools for development: callable, but listed only with S1BRIDGE_DEV_TOOLS=1 (saves tokens on
+# every request; composing never needs them).
+DEV_TOOLS = {"daw_inspect_track", "daw_inspect_mixer", "daw_probe", "daw_dump_host", "daw_call"}
+# Not offered over a shared URL (ChatGPT): they change files on this Mac outside the song.
+REMOTE_HIDDEN = {"bridge_setup", "bridge_connect_client"}
+
+
+def listed_tools(remote=False, dev=None):
+    """Tools for tools/list. remote: the HTTP server behind a public tunnel."""
+    if dev is None:
+        dev = os.environ.get("S1BRIDGE_DEV_TOOLS", "0") == "1"
+    out = []
+    for t in TOOLS:
+        if (t["name"] in DEV_TOOLS and not dev) or (remote and t["name"] in REMOTE_HIDDEN):
+            continue
+        if remote and t["name"] == "bridge_share":  # turning it on from ChatGPT makes no sense
+            t = dict(t, description="Stop sharing Studio One with this chat app (off; it cannot be turned on "
+                                    "from here) or show whether it is on (status).",
+                     inputSchema=_schema({"action": {"type": "string", "enum": ["off", "status"]}}, ["action"]))
+        out.append(t)
+    return out
 
 
 class ToolError(Exception):
