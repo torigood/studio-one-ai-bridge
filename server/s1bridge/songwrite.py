@@ -47,14 +47,20 @@ def _lane_title(song, identity, cc):
 
 
 def rewrite_zip(path, members):
-    """Replace ZIP entries {name: bytes}, None drops the entry; every other entry is copied as is."""
+    """Replace ZIP entries {name: bytes}, None drops the entry, a name not in the ZIP is added; every
+    other entry is copied as is."""
     tmp = path + ".aibridge-tmp"
     with zipfile.ZipFile(path) as src, zipfile.ZipFile(tmp, "w") as dst:
+        seen = set()
         for info in src.infolist():
+            seen.add(info.filename)
             if info.filename in members and members[info.filename] is None:
                 continue
             raw = members[info.filename] if info.filename in members else src.read(info.filename)
             dst.writestr(info, raw, compress_type=info.compress_type)
+        for name, raw in members.items():
+            if name not in seen and raw is not None:
+                dst.writestr(name, raw, compress_type=zipfile.ZIP_DEFLATED)
     os.replace(tmp, path)
 
 
@@ -238,3 +244,72 @@ def write_markers(path, markers, replace=True):
     rewrite_zip(path, {"Song/song.xml": ("﻿" + xml).encode("utf-8")})
     return {"markers": [{"beat": b, "name": n} for b, n in sorted(new)],
             "kept": kept, "replaced": replace, "backup": bak}
+
+
+def write_sections(path, sections, replace=True):
+    """Write arranger sections into the song's Arranger Track and show the track.
+    sections: [{"name", start "bar" (1-based) or "beat", and "bars" or "beats" (length) or "end_bar"}].
+    song.xml (verified 2026-10-18; Studio One loads, shows and re-saves these):
+      <ArrangerTrack ...><Attributes x:id="attributes" hidden="0"/>
+        <ArrangerEvent start="16" timeFormat="2" length="16" name="Verse"/>"""
+    import re
+    from xml.sax.saxutils import escape
+    sigs = Song(path).time_signatures()
+    new = []
+    for s in sections:
+        name = str(s.get("name") or "").strip()
+        if not name:
+            raise SongWriteError("every section needs a name")
+        if "beat" in s:
+            start = float(s["beat"])
+        elif "bar" in s:
+            start = bar_to_beats(sigs, int(s["bar"]))
+        else:
+            raise SongWriteError("section %r needs bar or beat" % name)
+        if "beats" in s:
+            length = float(s["beats"])
+        elif "end_bar" in s:
+            length = bar_to_beats(sigs, int(s["end_bar"])) - start
+        elif "bars" in s and "bar" in s:
+            length = bar_to_beats(sigs, int(s["bar"]) + int(s["bars"])) - start
+        elif "bars" in s:
+            raise SongWriteError("section %r: bars needs a start bar (or give beats)" % name)
+        else:
+            raise SongWriteError("section %r needs a length: bars, beats or end_bar" % name)
+        if start < 0 or length <= 0:
+            raise SongWriteError("section %r has no length or starts before the song" % name)
+        new.append((start, length, name))
+    new.sort()
+    for (s1, l1, n1), (s2, _, n2) in zip(new, new[1:]):
+        if s1 + l1 > s2 + 1e-9:
+            raise SongWriteError("sections %r and %r overlap" % (n1, n2))
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("Song/song.xml").decode("utf-8-sig")
+    m = re.search(r'(<ArrangerTrack\b[^>]*?)(/>|>(.*?)</ArrangerTrack>)', xml, re.S)
+    if not m:
+        raise SongWriteError("song has no Arranger Track")
+    body = m.group(3) or ""
+    if replace:
+        body = re.sub(r'\s*<ArrangerEvent\b[^>]*/>', "", body)
+    elif any(True for _ in re.finditer(r'<ArrangerEvent\b', body)):
+        old = [(float(re.search(r'start="([^"]+)"', e).group(1)) if 'start="' in e else 0.0,
+                float(re.search(r'length="([^"]+)"', e).group(1)))
+               for e in re.findall(r'<ArrangerEvent\b[^>]*/>', body)]
+        for s, l, n in new:
+            if any(s < os_ + ol and os_ < s + l for os_, ol in old):
+                raise SongWriteError("section %r overlaps an existing section; use replace" % n)
+    if re.search(r'<Attributes x:id="attributes"[^>]*hidden="1"', body):
+        body = re.sub(r'(<Attributes x:id="attributes"[^>]*)hidden="1"', r'\1hidden="0"', body, count=1)
+    elif 'x:id="attributes"' not in body:
+        body = '\n\t\t\t\t<Attributes x:id="attributes" hidden="0"/>' + body
+
+    def num(v):
+        return ("%.6f" % v).rstrip("0").rstrip(".")
+    added = "".join('\n\t\t\t\t<ArrangerEvent start="%s" timeFormat="2" length="%s" name="%s"/>'
+                    % (num(s), num(l), escape(n, {'"': "&quot;"})) for s, l, n in new)
+    block = m.group(1) + ">" + body.rstrip() + added + "\n\t\t\t</ArrangerTrack>"
+    xml = xml[:m.start()] + block + xml[m.end():]
+    bak = backup(path)
+    rewrite_zip(path, {"Song/song.xml": ("﻿" + xml).encode("utf-8")})
+    return {"sections": [{"name": n, "start_beat": s, "length_beats": l} for s, l, n in new],
+            "replaced": replace, "backup": bak}

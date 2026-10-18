@@ -89,6 +89,34 @@ class Mailbox:
         return sorted(n[:-5] for n in os.listdir(d) if n.endswith(".json")
                       and not os.path.exists(os.path.join(self._dir("outbox"), n)))
 
+    def cleanup(self, keep_results=3600, stale_jobs=600):
+        """Remove what nobody will read: results older than keep_results seconds (and their job files),
+        and jobs older than stale_jobs seconds that never got a result (they would otherwise run the next
+        time Studio One runs jobs). Returns the number of files removed. Errors are ignored."""
+        now, removed = time.time(), 0
+        inbox, outbox = self._dir("inbox"), self._dir("outbox")
+        for folder, limit, needs_result in ((outbox, keep_results, False), (inbox, stale_jobs, None)):
+            if not os.path.isdir(folder):
+                continue
+            for n in os.listdir(folder):
+                if not n.endswith(".json"):
+                    continue
+                path = os.path.join(folder, n)
+                try:
+                    old = now - os.path.getmtime(path) > limit
+                    answered = folder == inbox and os.path.exists(os.path.join(outbox, n))
+                    if old or answered:
+                        os.remove(path)
+                        removed += 1
+                        if folder == outbox:
+                            job = os.path.join(inbox, n)
+                            if os.path.exists(job):
+                                os.remove(job)
+                                removed += 1
+                except OSError:
+                    pass
+        return removed
+
     def read_json(self, name):
         path = os.path.join(self.root, name)
         if not os.path.exists(path):

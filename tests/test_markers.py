@@ -24,6 +24,10 @@ SONG_XML = """﻿<?xml version="1.0" encoding="UTF-8"?>
 <MarkerEvent markerType="3" start="600" timeFormat="2" name="End"/>
 <MarkerEvent markerType="0" start="32" timeFormat="2" name="Old"/>
 </MarkerTrack>
+<ArrangerTrack version="1" timeFormat="2" color="FF8A6B32">
+<Attributes x:id="attributes" hidden="1"/>
+<ArrangerEvent timeFormat="2" length="8" name="Old A"/>
+</ArrangerTrack>
 </List></Attributes></Song>"""
 
 
@@ -70,6 +74,29 @@ class Markers(unittest.TestCase):
         for bad in ([{"name": ""}], [{"name": "X"}], [{"name": "X", "bar": 0}]):
             with self.assertRaises(songwrite.SongWriteError):
                 songwrite.write_markers(self.path, bad)
+
+
+class Sections(Markers):
+    def sections(self):
+        return [(s["name"], s["start_beats"], s["length_beats"]) for s in Song(self.path).arranger_sections()]
+
+    def test_replace_and_show(self):
+        r = songwrite.write_sections(self.path, [{"name": "Intro", "bar": 1, "bars": 2},
+                                                  {"name": "Verse", "bar": 3, "end_bar": 5},
+                                                  {"name": "Chorus", "beat": 14, "beats": 6}])
+        self.assertEqual(self.sections(), [("Intro", 0.0, 8.0), ("Verse", 8.0, 6.0), ("Chorus", 14.0, 6.0)])
+        with zipfile.ZipFile(self.path) as z:
+            xml = z.read("Song/song.xml").decode("utf-8-sig")
+        self.assertIn('<Attributes x:id="attributes" hidden="0"/>', xml)
+        self.assertEqual(len(r["sections"]), 3)
+
+    def test_overlap_and_keep(self):
+        with self.assertRaises(songwrite.SongWriteError):
+            songwrite.write_sections(self.path, [{"name": "A", "bar": 1, "bars": 2}, {"name": "B", "beat": 4, "beats": 4}])
+        with self.assertRaises(songwrite.SongWriteError):  # overlaps the kept "Old A" (0..8)
+            songwrite.write_sections(self.path, [{"name": "B", "beat": 4, "beats": 4}], replace=False)
+        songwrite.write_sections(self.path, [{"name": "B", "beat": 8, "beats": 4}], replace=False)
+        self.assertEqual([s[0] for s in self.sections()], ["Old A", "B"])
 
 
 if __name__ == "__main__":

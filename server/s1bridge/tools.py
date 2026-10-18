@@ -22,6 +22,7 @@ from . import chords
 from . import effects
 from . import setup
 from . import clients
+from . import automation
 import time
 from .keys import key_from_notes
 import subprocess
@@ -136,6 +137,39 @@ TOOLS = [
                              "chords": {"type": "array", "items": _schema({"beat": _N, "length": _N, "chord": _S},
                                                                           ["beat", "length", "chord"])}},
                             ["path", "chords"])},
+    {"name": "song_write_automation",
+     "description": "Write mixer automation for a track of a saved .song (instrument tracks: their instrument "
+                    "channel): param volume (value in dB, '-inf' = silence, max +10), pan (-1 left .. 1 right) or "
+                    "mute (0/1). points: [{bar (1-based) or beat (quarter notes from song start), value}], joined by "
+                    "straight lines (a jump = two points close together, e.g. beat 16 and 16.01). Fades: two points. "
+                    "replace (default true) drops old points between the first and last new point. The channel is "
+                    "set to automation Read so it plays (automation only applies while the song plays). If the "
+                    "song is open it is saved, closed, written and reopened automatically; backed up first.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK,
+                             "param": {"type": "string", "enum": ["volume", "pan", "mute"]},
+                             "points": {"type": "array", "items": {
+                                 "type": "object", "properties": {"bar": _I, "beat": _N, "value": {"type": ["number", "string"]}},
+                                 "required": ["value"], "additionalProperties": False}},
+                             "replace": {"type": "boolean"}}, ["path", "track", "param", "points"])},
+    {"name": "song_add_send",
+     "description": "Add a send from a track's channel (instrument tracks: their instrument channel) or a mixer "
+                    "channel to an EXISTING FX channel or bus (destination = its label, e.g. 'Room Reverb') in a saved "
+                    ".song, so several tracks can share one reverb. level_db (default -6), pan -1 (left) .. 1 (right), "
+                    "prefader. If the song is open it is saved, closed, written and reopened automatically.",
+     "inputSchema": _schema({"path": _SONG, "destination": _S, "track": _TRACK, "mixer_channel": _S,
+                             "level_db": _N, "pan": _N, "prefader": {"type": "boolean"}}, ["path", "destination"])},
+    {"name": "song_write_sections",
+     "description": "Write arranger sections (song structure blocks: Intro, Verse, Chorus...) into the Arranger "
+                    "Track of a saved .song and show the track: [{name, bar (1-based) or beat, and bars (length), "
+                    "beats or end_bar}]. Sections may not overlap. replace (default true) removes the old sections. "
+                    "In Studio One a section can then be moved or copied with all its parts. If the song is open it "
+                    "is saved, closed, written and reopened automatically. Read them back with song_summary.",
+     "inputSchema": _schema({"path": _SONG, "replace": {"type": "boolean"},
+                             "sections": {"type": "array", "items": {
+                                 "type": "object", "properties": {"name": _S, "bar": _I, "beat": _N, "bars": _I,
+                                                                  "beats": _N, "end_bar": _I},
+                                 "required": ["name"], "additionalProperties": False}}},
+                            ["path", "sections"])},
     {"name": "song_write_markers",
      "description": "Write named markers (song sections like Intro, Verse, Chorus) into the Marker Track of a saved "
                     ".song: [{name, bar (1-based)} or {name, beat (quarter notes from song start)}]. replace (default "
@@ -163,7 +197,7 @@ TOOLS = [
     {"name": "bridge_doctor",
      "description": "Check the Studio One side of the bridge: Studio One found, extension installed and its version, "
                     "control surface, device registration, MIDI port, mailbox, a ping when Studio One runs, catalog, "
-                    "numpy. Each failed check has a fix. Run it when daw_* tools stay queued or fail, or before "
+                    "numpy. Each failed check has a fix. Run it when daw_* tools do not answer or fail, or before "
                     "bridge_setup.",
      "inputSchema": _schema({})},
     {"name": "bridge_setup",
@@ -197,10 +231,23 @@ TOOLS = [
      "description": "Add an effect send: creates a new FX channel with the effect (e.g. Room Reverb, Analog Delay; "
                     "effect = name or class_id from library_effects) and a send to it from the track's channel "
                     "(instrument tracks: their instrument channel) or a mixer channel. level_db sets the send level "
-                    "(Studio One's default is -6 dB). Studio One's script API cannot send to an FX channel that "
-                    "already exists, so each call makes a new FX channel.",
+                    "(Studio One's default is -6 dB). Each call makes a new FX channel; to send more tracks to an FX "
+                    "channel that already exists use song_add_send.",
      "inputSchema": _schema({"effect": _S, "track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
                              "level_db": _N, "wait": _WAIT}, ["effect"])},
+    {"name": "daw_add_bus",
+     "description": "Group channels into a new bus (e.g. all drums): creates a bus channel, routes the outputs of the "
+                    "given tracks (instrument tracks: their instrument channel) and/or mixer channels into it, and "
+                    "routes the bus to where the first channel went before (usually Main). name labels the bus.",
+     "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK},
+                             "mixer_channels": {"type": "array", "items": {"type": ["string", "integer"]}},
+                             "name": _S, "wait": _WAIT})},
+    {"name": "daw_set_output",
+     "description": "Route a track's channel (instrument tracks: their instrument channel) or a mixer channel to "
+                    "another channel's input: an existing bus (from daw_add_bus), an FX channel, or 'Main' for the main "
+                    "output. destination = 'Main' or an index, name or label from daw_list_mixer. Without destination it reads the output.",
+     "inputSchema": _schema({"track": _TRACK, "mixer_channel": {"type": ["string", "integer"]},
+                             "destination": {"type": ["string", "integer"]}, "wait": _WAIT})},
     {"name": "daw_set_send",
      "description": "Read or set a send of a track's channel (instrument tracks: their instrument channel) or a mixer "
                     "channel: send = 1-based send number (default 1), level_db and/or pan (0..1, 0.5 = centre; as on "
@@ -327,7 +374,7 @@ TOOLS = [
      "inputSchema": _schema({"wait": _WAIT})},
     {"name": "daw_set_channel_param",
      "description": "Set a mixer parameter. volume: linear gain, 1.0 = 0 dB. pan: 0..1, 0.5 = centre; observed 0.25 shows R50 in the mixer, so values below 0.5 pan RIGHT. "
-                    "Also mute, solo, recordArmed, monitor (0/1). For an instrument track, volume/pan go to its "
+                    "Also mute, solo, recordArmed, monitor (0/1), automationMode (0 Off, 1 Read, 2 Touch, 3 Latch, 4 Write). For an instrument track, volume/pan go to its "
                     "instrument output channel, found from the saved song, else the instrument channel labelled "
                     "like the track, else by saving the song (File > Save) and reading it again. If none works "
                     "(song never saved), pass mixer_channel (index, name or label from daw_list_mixer) instead.",
@@ -574,7 +621,7 @@ def _active_song_path(wait=None):
                               "path": ["activeDocument", "path"], "names": ["url"]}, min(wait or 4, 4))
     except ToolError:
         return None
-    if isinstance(r, dict) and r.get("status") == "queued":
+    if isinstance(r, dict) and r.get("status") == "not_run":
         Mailbox().cancel(r["job_id"])  # no song open (Run Jobs needs one)
         return None
     url = (r.get("names") or {}).get("url") if isinstance(r, dict) else None
@@ -594,6 +641,7 @@ def _open_in_daw(path):
 
 def _bridge(op, args, wait):
     mb = Mailbox()
+    mb.cleanup()
     job_id = mb.enqueue(op, args)
     trigger_error = _trigger()
     wait = 10 if wait is None else wait
@@ -603,9 +651,15 @@ def _bridge(op, args, wait):
         trigger_error = _trigger()
         r = mb.wait(job_id, wait - 2)
     if r is None:
-        return {"status": "queued", "job_id": job_id, "midi_trigger_error": trigger_error,
-                "note": "The bridge has not run this job yet. Is Studio One running with a song open? "
-                        "Run bridge_doctor to find the cause; it says how to fix each missing piece."}
+        # Take the job back: left in the inbox it would run whenever Studio One next runs jobs, long after
+        # the caller gave up (a surprise edit). If the bridge already took it, it may still finish.
+        cancelled = mb.cancel(job_id)
+        return {"status": "not_run", "job_id": job_id, "cancelled": cancelled, "midi_trigger_error": trigger_error,
+                "note": ("The bridge did not answer in %s s, so the job was withdrawn and nothing changed. "
+                         % wait if cancelled else
+                         "The bridge took the job but did not answer in %s s; it may still finish. " % wait) +
+                        "Is Studio One running with a song open (and no dialog open)? Run bridge_doctor to find the "
+                        "cause; it says how to fix each missing piece."}
     if not r.get("ok"):
         raise ToolError("bridge error: %s" % r.get("error"))
     return r.get("result")
@@ -621,7 +675,7 @@ def _wait_for_bridge(seconds):
             r = None
         if isinstance(r, dict) and r.get("pong"):
             return True
-        if isinstance(r, dict) and r.get("status") == "queued":
+        if isinstance(r, dict) and r.get("status") == "not_run":
             Mailbox().cancel(r["job_id"])
         time.sleep(1)
     return False
@@ -738,14 +792,14 @@ def _bounce(track, part_start, keep, analyze, wait):
 
 def _events(track, wait):
     r = _bridge("list_events", {"track": track}, wait)
-    if isinstance(r, dict) and r.get("status") == "queued":
+    if isinstance(r, dict) and r.get("status") == "not_run":
         raise ToolError("the bridge did not answer; is Studio One running with a song open?")
     return r["events"]
 
 
 def _tracks(wait):
     r = _bridge("list_tracks", {}, wait)
-    if isinstance(r, dict) and r.get("status") == "queued":
+    if isinstance(r, dict) and r.get("status") == "not_run":
         raise ToolError("the bridge did not answer; is Studio One running with a song open?")
     return r["tracks"]
 
@@ -921,6 +975,83 @@ def _add_send(a, wait):
     if new and a.get("level_db") is not None:
         out.update(_send_state(_call(_send_param_steps(ch["index"], new[0], a["level_db"]), wait, "set send level")))
     return out
+
+
+def _mixer_env_steps():
+    return [{"as": "b_f", "on": {"context": True}, "get": "functions"},
+            {"as": "b_r", "on": {"var": "b_f"}, "get": "root"},
+            {"as": "b_e", "on": {"var": "b_r"}, "get": "environment"},
+            {"as": "b_con", "on": {"var": "b_e"}, "call": "find", "args": ["MixerConsole"]},
+            {"as": "b_cl", "on": {"var": "b_con"}, "call": "getChannelList", "args": [1]},
+            {"as": "b_fx", "on": {"functions": "DeviceEditFunctions"}}]
+
+
+def _channel_output(index, wait):
+    steps = _mixer_channel_steps(index, "o") + [
+        {"as": "od", "on": {"var": "o"}, "call": "getDestinationChannel", "names": ["label", "channelType", "name"]}]
+    return (_call(steps, wait, "read output")[-1].get("props") or {})
+
+
+def _add_bus(a, wait):
+    # Create Tracks.js (AddBusForSelectedChannelsTask): AudioMixer.setup.addChannel("AudioGroup"),
+    # DeviceEditFunctions.connectChannel(channel, bus.input), bus.connectTo(old destination). Verified 2026-10-18.
+    refs = [{"track": t} for t in a.get("tracks") or []] + [{"mixer_channel": m} for m in a.get("mixer_channels") or []]
+    if not refs:
+        raise ToolError("pass tracks and/or mixer_channels")
+    chans = [_audio_channel_index(r, wait) for r in refs]
+    if len({c["index"] for c in chans}) != len(chans):
+        raise ToolError("the same channel was given twice")
+    steps = _mixer_env_steps() + [
+        {"as": "b_am", "on": {"var": "b_e"}, "call": "find", "args": ["AudioMixer"]},
+        {"as": "b_su", "on": {"var": "b_am"}, "get": "setup"}]
+    for i, c in enumerate(chans):
+        steps.append({"as": "c%d" % i, "on": {"var": "b_cl"}, "call": "getChannel", "args": [c["index"]]})
+    steps += [{"as": "dest", "on": {"var": "c0"}, "call": "getDestinationChannel"},
+              {"as": "bus", "on": {"var": "b_su"}, "call": "addChannel", "args": ["AudioGroup"], "names": ["label", "name"]},
+              {"as": "bin", "on": {"var": "bus"}, "get": "input"}]
+    for i in range(len(chans)):
+        steps.append({"on": {"var": "b_fx"}, "call": "connectChannel", "args": [{"var": "c%d" % i}, {"var": "bin"}]})
+    steps.append({"on": {"var": "bus"}, "call": "connectTo", "args": [{"var": "dest"}]})
+    if a.get("name"):
+        steps.append({"on": {"var": "bus"}, "set": "label", "value": a["name"]})
+    _call(steps, wait, "add bus")
+    mixer = _bridge("list_mixer", {}, wait).get("channels", [])
+    buses = [c for c in mixer if c.get("channelType") == "AudioGroup"]
+    bus = buses[-1] if buses else None
+    routed = [{"channel": c["label"], "output": _channel_output(c["index"], wait).get("label")} for c in chans]
+    out = {"bus": {"label": bus["label"], "mixer_index": bus["index"]} if bus else None, "channels": routed}
+    if bus:
+        out["bus"]["output"] = _channel_output(bus["index"], wait).get("label")
+        wrong = [r["channel"] for r in routed if r["output"] != bus["label"]]
+        if wrong:
+            out["warning"] = "not routed to the bus: %s" % ", ".join(wrong)
+    return out
+
+
+def _set_output(a, wait):
+    ch = _audio_channel_index(a, wait)
+    if a.get("destination") is None:
+        return {"channel": ch["label"], "output": _channel_output(ch["index"], wait)}
+    # The main output is not in channel list 1 (daw_list_mixer) but alone in list 3 (observed 2026-10-18).
+    main = str(a["destination"]).lower() in ("main", "main out", "main output", "master")
+    if main:
+        dest = {"label": "Main"}
+        get_dest = [{"as": "l3", "on": {"var": "b_con"}, "call": "getChannelList", "args": [3]},
+                    {"as": "d", "on": {"var": "l3"}, "call": "getChannel", "args": [0], "names": ["label"]}]
+    else:
+        dest = _audio_channel_index({"mixer_channel": a["destination"]}, wait)
+        if dest["index"] == ch["index"]:
+            raise ToolError("a channel cannot be routed to itself")
+        get_dest = [{"as": "d", "on": {"var": "b_cl"}, "call": "getChannel", "args": [dest["index"]]}]
+    steps = _mixer_env_steps() + [
+        {"as": "c", "on": {"var": "b_cl"}, "call": "getChannel", "args": [ch["index"]]}] + get_dest + [
+        {"as": "din", "on": {"var": "d"}, "get": "input"},
+        {"as": "ok", "on": {"var": "b_fx"}, "call": "connectChannel", "args": [{"var": "c"}, {"var": "din"}]}]
+    _call(steps, wait, "set output")
+    now = _channel_output(ch["index"], wait)
+    if not main and now.get("label") != dest["label"] or main and now.get("channelType") != "AudioOutput":
+        raise ToolError("Studio One kept the output %r" % now.get("label"))
+    return {"channel": ch["label"], "output": now.get("label")}
 
 
 def _set_send(a, wait):
@@ -1102,6 +1233,18 @@ def call(name, a):
     if name == "song_add_loop":
         return _offline_edit(_song_path(a["path"]), lambda p: loops.add_loop(
             p, a["track"], a["loop"], a["start_beats"], a.get("length_beats")))
+    if name == "song_write_automation":
+        return _offline_edit(_song_path(a["path"]), lambda p: automation.write_automation(
+            p, a["track"], a["param"], a["points"], a.get("replace", True)))
+    if name == "song_add_send":
+        if a.get("track") is None and a.get("mixer_channel") is None:
+            raise ToolError("pass track or mixer_channel")
+        return _offline_edit(_song_path(a["path"]), lambda p: effects.add_send(
+            p, a["destination"], track=a.get("track"), mixer_channel=a.get("mixer_channel"),
+            level_db=a.get("level_db", -6.0), pan=a.get("pan", 0.0), prefader=a.get("prefader", False)))
+    if name == "song_write_sections":
+        return _offline_edit(_song_path(a["path"]),
+                             lambda p: songwrite.write_sections(p, a["sections"], a.get("replace", True)))
     if name == "song_write_markers":
         return _offline_edit(_song_path(a["path"]),
                              lambda p: songwrite.write_markers(p, a["markers"], a.get("replace", True)))
@@ -1264,6 +1407,10 @@ def call(name, a):
         return _add_send(a, wait)
     if name == "daw_set_send":
         return _set_send(a, wait)
+    if name == "daw_add_bus":
+        return _add_bus(a, wait)
+    if name == "daw_set_output":
+        return _set_output(a, wait)
     if name == "daw_set_channel_param":
         args = {k: a[k] for k in ("track", "mixer_channel", "param", "value") if k in a}
         if "mixer_channel" not in args:

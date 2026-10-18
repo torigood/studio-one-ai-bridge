@@ -127,3 +127,54 @@ def remove_effect(path, track=None, mixer_channel=None, slot=None, plugin=None):
     return {"channel": name, "label": label, "removed": {"slot": slot_name, "plugin": plugin_name},
             "remaining": [{"slot": s[0], "plugin": s[1]} for s in _slots(xml, *_channel_span(xml, tag, name))],
             "backup": bak}
+
+
+def add_send(path, destination, track=None, mixer_channel=None, level_db=-6.0, pan=0.0, prefader=False):
+    """Add a send from a channel to an existing FX or bus channel (the script API can only send to a new
+    FX channel, docs/re-findings.md). Devices/audiomixer.xml, in the source channel:
+      <Attributes x:id="Sends">
+        <Attributes name="Send01" bypass="0" prefader="0" level="<linear gain>" pan="<0..1, below 0.5 = right>">
+          <Connection x:id="destination" objectID="{destination uid}/Input" friendlyName="<label>"/>
+    pan here is -1 (left) .. 1 (right)."""
+    from xml.sax.saxutils import escape
+    with Song(path) as song:
+        tag, name, label = _resolve_channel(song, track, mixer_channel)
+        chans = list(song._channels.values())
+    dests = [c for c in chans if c["type"] in ("AudioEffectChannel", "AudioGroupChannel")
+             and (c["label"] == destination or c["name"] == destination)]
+    if len(dests) != 1:
+        raise SongWriteError("destination %r matches %d FX/bus channels (%s)" % (
+            destination, len(dests), ", ".join(c["label"] for c in chans
+                                               if c["type"] in ("AudioEffectChannel", "AudioGroupChannel")) or "none"))
+    dest = dests[0]
+    if dest["label"] == label and dest["type"] == tag:
+        raise SongWriteError("a channel cannot send to itself")
+    if not -1 <= float(pan) <= 1:
+        raise SongWriteError("pan must be -1 (left) .. 1 (right)")
+    gain = 10 ** (float(level_db) / 20.0)
+    if gain > 3.1622:
+        raise SongWriteError("send level above +10 dB")
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("Devices/audiomixer.xml").decode("utf-8-sig")
+    start, end = _channel_span(xml, tag, name)
+    m = re.compile(r'<Attributes x:id="Sends"(/?)>').search(xml, start, end)
+    sends = xml[m.start():_block_end(xml, m.start())] if m and not m.group(1) else ""
+    existing = re.findall(r'<Attributes name="Send(\d+)"', sends)
+    if dest["uid"] in sends:
+        raise SongWriteError("%s already sends to %s" % (label, dest["label"]))
+    slot = "Send%02d" % (max([int(n) for n in existing] or [0]) + 1)
+    block = ('\n\t\t\t\t\t<Attributes name="%s" bypass="0" prefader="%d" level="%r" pan="%r">'
+             '\n\t\t\t\t\t\t<Connection x:id="destination" objectID="%s/Input" friendlyName="%s"/>'
+             '\n\t\t\t\t\t</Attributes>' % (slot, 1 if prefader else 0, gain, 0.5 - float(pan) / 2.0,
+                                            dest["uid"], escape(dest["label"], {'"': "&quot;"})))
+    if m and not m.group(1):
+        close = _block_end(xml, m.start()) - len("</Attributes>")
+        xml = xml[:close].rstrip() + block + "\n\t\t\t\t" + xml[close:]
+    elif m:  # <Attributes x:id="Sends"/>
+        xml = xml[:m.start()] + '<Attributes x:id="Sends">' + block + "\n\t\t\t\t</Attributes>" + xml[m.end():]
+    else:
+        xml = xml[:end].rstrip() + '\n\t\t\t\t<Attributes x:id="Sends">' + block + "\n\t\t\t\t</Attributes>\n\t\t\t" + xml[end:]
+    bak = backup(path)
+    rewrite_zip(path, {"Devices/audiomixer.xml": ("﻿" + xml).encode("utf-8")})
+    return {"channel": label, "send": int(slot[4:]), "slot": slot, "destination": dest["label"],
+            "level_db": round(float(level_db), 2), "pan": float(pan), "prefader": bool(prefader), "backup": bak}

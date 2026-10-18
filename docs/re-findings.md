@@ -157,4 +157,25 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
   only `addChannel` and `focusChannel`. So sending to an existing FX channel is not scriptable. Group buses:
   `audioMixer.setup.addChannel("AudioGroup")` + `connectChannel(channel, bus.input)` (Create Tracks.js). → `daw_add_send`,
   `daw_set_send`.
+- [O] **Automation (2026-10-18)**: song.xml MediaTrack `Attributes x:id="AutomationRegionList"` →
+  `AutomationRegion title identity="param:///AudioMixer/{channel uid}/volume|pan|mute" metaIdentity="<ChannelClass>/<param>"`
+  (`AudioTrackChannel`, `AudioSynthChannel` for an instrument track's channel, region on the instrument track) with
+  `Url x:id="points" url="media:///Envelopes/<track>/<Title>.envelopex"`; envelopex = UBJSON `{events: [{start, value}]}`,
+  start in quarter notes from song start (a step at beat 64 played at bar 17 at 128 BPM), value = normalized parameter
+  (volume: linear gain / 3.1622, live `getNormalized` of gain 0.5 = 0.158; pan 0..1). Plug-in parameters:
+  `param:///Synths/{slot uid}/vstpNN` or `param:///AudioMixer/{uid}/Inserts/{slot uid}/<id>` with metaIdentity
+  `{classID}/<id>`. An envelope plays only in automation Read and only while the transport runs (a stopped playhead keeps
+  the fader). Mode: audiomixer.xml channel `Attributes x:id="Automation" mode` and live channel parameter
+  `automationMode` (0 Off, 1 Read, 2 Touch, 3 Latch, 4 Write; settable with setValue). Studio One loads written lanes and
+  re-saves them (it omits `start` for a point at 0). → `song_write_automation`.
+- [O] **Buses (2026-10-18)**: `environment.find("AudioMixer").setup.addChannel("AudioGroup")` makes a bus ("Bus 1",
+  label writable); `DeviceEditFunctions.connectChannel(channel, bus.input)` routes a channel's output (also to an
+  existing bus or FX channel); `bus.connectTo(channel.getDestinationChannel())`. The main output is not in
+  `MixerConsole.getChannelList(1)` but alone in list 3. → `daw_add_bus`, `daw_set_output`.
+- [O] **Sends offline**: audiomixer.xml channel `Attributes x:id="Sends"` → `Attributes name="Send0N" bypass prefader
+  level=<linear gain> pan` + `Connection x:id="destination" objectID="{FX/bus uid}/Input" friendlyName=<label>`. A send
+  written to an existing FX channel loads (live level/pan read back -8.0 dB / L50) and is re-saved. → `song_add_send`.
+- [O] **Arranger sections**: `ArrangerTrack` children `ArrangerEvent start timeFormat="2" length name` (quarter notes),
+  `Attributes x:id="attributes" hidden="0"` shows the track. Written by hand, Studio One displayed and re-saved them.
+  "Create Arranger Sections from Markers" is not a global command (no category handled it). → `song_write_sections`.
 - [O] `getInsertPosition()` is not the new track's index (8 for a 6th track); the index is found by scanning the track list after creation.

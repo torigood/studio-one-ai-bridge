@@ -159,7 +159,7 @@ Start Studio One, open a song and ask the AI to run `daw_ping`. No device setup 
 fixed CoreMIDI unique ID, so Studio One finds it again after the AI client or the daemon restarts
 (MCP servers start the daemon on demand).
 
-If `daw_ping` stays queued, run `python3 server/run.py doctor`. To add the device by hand instead:
+If `daw_ping` does not answer, run `python3 server/run.py doctor`. To add the device by hand instead:
 **Studio One → Options → External Devices → Add...**, folder **local**, **AI Bridge**,
 **Receive From: AI Bridge**.
 
@@ -238,6 +238,10 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_set_loop` | Loop range by bars or beats, loop on/off |
 | `song_write_markers` | Named song sections (Intro, Verse, Chorus...) in the Marker Track (offline with auto reopen) |
 | `daw_add_send`, `daw_set_send` | New FX channel with an effect (reverb, delay...) and a send to it; send level and pan |
+| `song_add_send` | Send to an FX channel or bus that already exists (offline with auto reopen) |
+| `daw_add_bus`, `daw_set_output` | Group channels into a new bus; route a channel to a bus, FX channel or Main |
+| `song_write_automation` | Volume, pan or mute automation (fades, rides) for a track (offline with auto reopen; sets the channel to Read) |
+| `song_write_sections` | Arranger sections (Intro, Verse, Chorus...) shown on the Arranger Track (offline with auto reopen) |
 | `daw_bounce` | Render a track to audio and analyze it |
 | `daw_list_events`, `daw_repeat_event` | Events on a track; repeat a loop or part back to back |
 | `daw_add_instrument`, `daw_insert_effect` | Load instruments and insert effects |

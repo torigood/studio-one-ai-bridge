@@ -104,6 +104,7 @@ class Song:
                     uid = u.get("uid")
             g = _f(el.get("gain"), 1.0)
             chans[uid] = {
+                "uid": uid,
                 "type": el.tag,
                 "name": el.get("name"),  # e.g. "Channel03"; same as the live mixer channel name
                 "label": el.get("label"),
