@@ -65,6 +65,13 @@ class ShareSettings(unittest.TestCase):
         self.assertEqual(p["KeepAlive"], {"SuccessfulExit": False})  # a stop is not restarted
         self.assertTrue(p["RunAtLoad"])
 
+    def test_plist_keeps_paths(self):
+        # launchd does not pass on the caller's environment
+        with mock.patch.dict(os.environ, {"S1BRIDGE_DATA_DIR": "/tmp/s1data", "OTHER": "x"}):
+            env = plistlib.loads(share._plist())["EnvironmentVariables"]
+        self.assertEqual((env["S1BRIDGE_DATA_DIR"], env["HOME"]), ("/tmp/s1data", os.path.expanduser("~")))
+        self.assertNotIn("OTHER", env)
+
     def test_status_when_off(self):
         code, out = self.cli("--status")
         self.assertEqual(code, 0)

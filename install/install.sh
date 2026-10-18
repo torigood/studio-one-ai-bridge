@@ -15,7 +15,8 @@
 #   --ngrok          use a fixed ngrok address (asks for the authtoken and domain)
 #   --cloudflare     use a Cloudflare quick tunnel (no account, the address changes on every start)
 #   --uninstall      stop sharing, remove the Studio One side, the app and the command
-# Environment: S1BRIDGE_INSTALL_DIR overrides the app folder, S1BRIDGE_BIN_DIR the command folder.
+# Environment: S1BRIDGE_INSTALL_DIR overrides the app folder, S1BRIDGE_BIN_DIR the command folder,
+# S1BRIDGE_RELEASE_API the release lookup (tests).
 set -eu
 
 REPO="torigood/studio-one-ai-bridge"
@@ -79,7 +80,7 @@ trap 'rm -rf "$TMP"' EXIT
 # 1. get the .mcpb
 if [ -z "$MCPB" ]; then
 	say "Finding the latest release"
-	curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" -o "$TMP/release.json" \
+	curl -fsSL "${S1BRIDGE_RELEASE_API:-https://api.github.com/repos/$REPO/releases/latest}" -o "$TMP/release.json" \
 		|| die "could not reach GitHub (is the repository public?)"
 	URL="$(sed -n 's/.*"browser_download_url": *"\([^"]*\.mcpb\)".*/\1/p' "$TMP/release.json" | head -n 1)"
 	[ -n "$URL" ] || die "the latest release has no .mcpb file"
