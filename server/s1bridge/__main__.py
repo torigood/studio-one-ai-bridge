@@ -1,6 +1,7 @@
 """Stdio MCP server (JSON-RPC 2.0, newline-delimited). Standard library only.
 
 Run:  python3 -m s1bridge          (from the server/ directory)
+      python3 -m s1bridge setup|doctor|uninstall   install / check the Studio One side (setup.py)
 """
 import json
 import math
@@ -65,6 +66,9 @@ def handle(msg):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("setup", "doctor", "uninstall"):
+        from . import setup
+        sys.exit(setup.cli(sys.argv[1:]))
     for line in sys.stdin:
         line = line.strip()
         if not line:

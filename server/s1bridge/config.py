@@ -1,4 +1,4 @@
-"""Filesystem locations used by the server and install/install.py, in one place.
+"""Filesystem locations used by the server and setup.py, in one place.
 
 Every path can be overridden with an environment variable. Defaults are the
 Studio One 5 locations on macOS (the only tested platform). The Windows

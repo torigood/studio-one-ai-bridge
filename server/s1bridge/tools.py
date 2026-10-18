@@ -47,7 +47,7 @@ def _load_catalog():
             with open(path, encoding="utf-8") as f:
                 _catalog = json.load(f)
         except (OSError, ValueError):
-            # Generated on the user's machine by install/install.py; not shipped.
+            # Generated on the user's machine by setup (s1bridge/setup.py); not shipped.
             _catalog = {"commands": [], "editTasks": [], "missing": path}
     return _catalog
 
@@ -900,7 +900,7 @@ def call(name, a):
         catalog = _load_catalog()
         if "missing" in catalog:
             raise ToolError("command catalog not found at %s. Generate it on this machine: "
-                            "python3 install/install.py --catalog --apply" % catalog["missing"])
+                            "python3 server/run.py setup --apply" % catalog["missing"])
         hits = [c for c in catalog["commands"]
                 if (not cat or c["category"] == cat)
                 and (q in c["name"].lower() or q in c["category"].lower())]

@@ -57,21 +57,31 @@ python3 -m unittest discover -s tests
 Quit Studio One first.
 
 ```bash
-python3 bridge/build.py
-python3 install/install.py --surface
-python3 install/install.py --surface --apply
+python3 server/run.py setup
+python3 server/run.py setup --apply
 ```
 
-`install.py` is a dry run unless you pass `--apply`. It prints every file it will write, backs up
-what it touches into `install/backups/`, and never modifies the Studio One application itself.
-It installs:
+`setup` is a dry run unless you pass `--apply`. It prints every file it will write, backs up
+what it touches into `~/Library/Application Support/studio-one-ai-bridge/backups/`, refuses to
+run while Studio One is open, and never modifies the Studio One application itself. It installs:
 
 - the extension into `~/Library/Application Support/PreSonus/Studio One 5/Extensions/local.s1aibridge/`
-- the "AI Bridge" control surface into `.../Studio One 5/User Devices/AI Bridge/` (`--surface`)
+- the "AI Bridge" control surface into `.../Studio One 5/User Devices/AI Bridge/`
+- the device entry in `.../Studio One 5/MusicDevices.settings` that connects the surface to the
+  "AI Bridge" MIDI port (what Options → External Devices → Add would write)
 - a command catalog generated from **your** Studio One installation into
   `~/Library/Application Support/studio-one-ai-bridge/commands.json` (used by `commands_search`;
-  it is not shipped with this repository). Rebuild it alone with
-  `python3 install/install.py --catalog --apply`.
+  it is not shipped with this repository). Skip it with `--no-catalog`.
+
+and starts the small MIDI daemon that owns the "AI Bridge" port.
+
+Check everything at any time (with Studio One running and a song open it also pings the bridge):
+
+```bash
+python3 server/run.py doctor
+```
+
+The older `python3 install/install.py --surface [--apply]` still works and does the same.
 
 ### 3. Register the MCP server with your AI client
 
@@ -114,15 +124,16 @@ async with server:
     print((await Runner.run(agent, "Summarise my latest Studio One song")).final_output)
 ```
 
-### 4. Connect the control surface (once)
+### 4. Start Studio One
 
-1. Run `python3 server/midi_port.py status` once. It starts a small background daemon that owns
-   the virtual MIDI port **AI Bridge** with a fixed CoreMIDI unique ID, so Studio One finds the
-   same port again after the AI client or the daemon restarts. (MCP servers start it on demand.)
-2. Start Studio One.
-3. **Studio One → Options → External Devices → Add...**, open the folder **local**, choose
-   **AI Bridge**, set **Receive From** to **AI Bridge**, OK.
-4. Open a song and ask the AI to run `daw_ping`.
+Start Studio One, open a song and ask the AI to run `daw_ping`. No device setup is needed:
+`setup` registered the control surface, and the MIDI daemon keeps the **AI Bridge** port with a
+fixed CoreMIDI unique ID, so Studio One finds it again after the AI client or the daemon restarts
+(MCP servers start the daemon on demand).
+
+If `daw_ping` stays queued, run `python3 server/run.py doctor`. To add the device by hand instead:
+**Studio One → Options → External Devices → Add...**, folder **local**, **AI Bridge**,
+**Receive From: AI Bridge**.
 
 If the MIDI trigger is not set up, each live request waits until you run
 **Track → AI Bridge - Run Jobs** by hand. Set `S1BRIDGE_MIDI=0` to disable the virtual port.
@@ -163,11 +174,13 @@ tools/vst3dump/build.sh
 
 ### Uninstall
 
+Quit Studio One, then:
+
 ```bash
-python3 install/install.py --surface --uninstall --apply
+python3 server/run.py uninstall --apply
 ```
 
-Then remove the device under Options → External Devices.
+This removes the extension, the surface, its device entry and the catalog.
 
 ## Tools
 
@@ -210,8 +223,8 @@ Tools marked `EXPERIMENTAL` in their description use API details that are not fu
 - Offline tools open files read-only. Sound Set contents are never decrypted or read; only their
   file names are listed.
 - `daw_command` refuses File/Close, Quit, Revert, New and Open.
-- Nothing is written into Studio One folders without `install.py --apply`, and the application
-  bundle is never modified unless you explicitly choose the `--target app-scripts` option.
+- Nothing is written into Studio One folders without `setup --apply` (or `install.py --apply`), and
+  the application bundle is never modified unless you explicitly choose the `--target app-scripts` option.
 - The mailbox is a plain folder in your user directory; any local process can drop jobs into it.
 
 ## Configuration
@@ -240,11 +253,11 @@ Contributions welcome.
 server/s1bridge/   MCP server: JSON-RPC loop, tools, song parser, mailbox, MIDI, config
 server/run.py      entry point usable from any directory
 bridge/src/        Studio One extension source (JavaScript + XML)
-bridge/build.py    builds bridge/dist/aibridge.package
+bridge/build.py    builds bridge/dist/aibridge.package (for inspection; setup builds it itself)
 surface/           "AI Bridge" control surface definition
-install/install.py installer (dry run by default)
+install/install.py older installer interface; setup/doctor/uninstall live in server/s1bridge/setup.py
 re/tools/          package reader and catalog extractor (run on your own installation)
-docs/              reverse-engineering notes
+docs/              reverse-engineering notes, installer design
 tests/             python3 -m unittest discover -s tests
 ```
 
