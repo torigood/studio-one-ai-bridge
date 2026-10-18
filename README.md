@@ -72,8 +72,37 @@ chat and ask, e.g., "Studio One에서 daw_ping 해줘".
 - Anyone with the full URL can control Studio One and read your songs while `share` runs. Keep the
   URL private, stop with Ctrl+C when done, and run `share --new-token` if it leaked (the secret is
   kept in `<data dir>/share_token`).
-- The quick tunnel address changes on every start: edit the connector's URL after restarting.
+- The quick tunnel address changes on every start: edit the connector's URL after restarting, or use
+  a fixed ngrok address (below).
 - `share --no-tunnel` serves only on `http://127.0.0.1:8765/<secret>/mcp` for local MCP-over-HTTP clients.
+
+Why only ChatGPT needs this: Claude Desktop (also its chat) and Codex start the server on your Mac and
+relay tool calls themselves; the ChatGPT chat calls connector tools from OpenAI's servers.
+
+**In the background, on and off**
+
+```bash
+python3 server/run.py share --enable    # share now and at every login (LaunchAgent)
+python3 server/run.py share --status    # on/off and the connector URL
+python3 server/run.py share --disable   # stop, also at login
+```
+
+From Claude you can say "share Studio One with ChatGPT" / "stop sharing" (`bridge_share`).
+In the background it restarts by itself within about 20 seconds when the server code changes (an
+update, `git pull`), with the same address, so the ChatGPT connector needs no change. New tools show
+up in ChatGPT after refreshing the connector or in a new chat.
+
+**A fixed address with ngrok (free account)**: sign up at ngrok.com, copy *Your Authtoken*, and create
+your free static domain under *Domains*. Then:
+
+```bash
+python3 server/run.py share --set-ngrok-token                     # paste the authtoken (stored in the Keychain)
+python3 server/run.py share --ngrok-domain <name>.ngrok-free.app  # use it from now on
+python3 server/run.py share --enable
+```
+
+The connector URL is then `https://<name>.ngrok-free.app/<secret>/mcp` and stays the same, so the ChatGPT
+connector is set up once. `share --provider cloudflare` switches back.
 
 ## Install from a checkout (any MCP client)
 

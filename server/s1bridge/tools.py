@@ -215,6 +215,14 @@ TOOLS = [
                     "itself cannot start local servers; suggest Codex instead.",
      "inputSchema": _schema({"client": {"type": "string", "enum": sorted(clients.CLIENTS)},
                              "remove": {"type": "boolean"}})},
+    {"name": "bridge_share",
+     "description": "Share these Studio One tools with the ChatGPT chat app (which needs a public HTTPS address) "
+                    "in the background: action on (now and at every login), off (stop, also at login) or status. "
+                    "The connector URL contains a secret that gives control of Studio One; it is returned only "
+                    "with show_url=true, so ask the user before showing it. ChatGPT: Settings > Apps & "
+                    "Connectors > Developer mode > Create, server URL = that URL, authentication none.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["on", "off", "status"]},
+                             "show_url": {"type": "boolean"}}, ["action"])},
     # ---- live (bridge) -----------------------------------------------------
     {"name": "daw_status",
      "description": "Bridge status: whether the Studio One bridge has loaded, jobs still waiting, and whether the "
@@ -1319,6 +1327,32 @@ def call(name, a):
         return {"installed": setup.source_version(), "log": log,
                 "next": "Ask the user to start Studio One and open a song, then call daw_ping."}
 
+    if name == "bridge_share":
+        from . import share
+        if a["action"] == "on":
+            s = share.load_settings()
+            if s["provider"] == "ngrok" and not share.keychain_get("ngrok"):
+                raise ToolError("ngrok is selected but its authtoken is not in the Keychain; the user runs "
+                                "'python3 server/run.py share --set-ngrok-token' in Terminal")
+            try:
+                share.enable()
+            except RuntimeError as e:
+                raise ToolError(str(e))
+            st = share.wait_for_url()
+        elif a["action"] == "off":
+            share.disable()
+            st = share.status()
+        else:
+            st = share.status()
+        url = st.pop("url")
+        st["address"] = url.split("/")[2] if url else None
+        if url and a.get("show_url"):
+            st["url"] = url
+        elif url:
+            st["url"] = "(hidden: contains the secret; call again with show_url=true)"
+        if st["provider"] == "cloudflare" and url:
+            st["note"] = "Cloudflare quick tunnel: the address changes when sharing restarts; update the ChatGPT connector then."
+        return st
     if name == "bridge_connect_client":
         if not a.get("client"):
             found = clients.detect()
