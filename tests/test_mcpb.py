@@ -17,7 +17,7 @@ from s1bridge import config, tools  # noqa: E402
 class McpbTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.out = build_mcpb.build(self.tmp.name)
+        self.out = build_mcpb.build(self.tmp.name, python=False)  # offline and fast
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -31,7 +31,26 @@ class McpbTests(unittest.TestCase):
             self.assertIn(need, names)
         self.assertFalse([n for n in names if "__pycache__" in n or n.startswith("tests/")])
         self.assertEqual(m["server"]["entry_point"], "server/run.py")
+        self.assertEqual(m["server"]["mcp_config"]["command"], "python3")
         self.assertEqual(m["compatibility"]["platforms"], ["darwin"])
+        self.assertIn("bin/start.sh", names)
+
+    def test_bundled_manifest_starts_launcher(self):
+        m = build_mcpb.manifest("1.0.0", bundled=True)
+        self.assertEqual(m["server"]["type"], "binary")
+        self.assertEqual(m["server"]["mcp_config"]["args"], ["${__dirname}/bin/start.sh"])
+        self.assertNotIn("runtimes", m["compatibility"])
+
+    def test_python_trim(self):
+        keep = build_mcpb.keep_python_member
+        self.assertEqual(keep("python/bin/python3.12"), "bin/python3")
+        self.assertEqual(keep("python/lib/python3.12/json/decoder.py"), "lib/python3.12/json/decoder.py")
+        self.assertEqual(keep("python/lib/python3.12/lib-dynload/_ctypes.cpython-312-darwin.so"),
+                         "lib/python3.12/lib-dynload/_ctypes.cpython-312-darwin.so")
+        for drop in ("python/bin/pip3", "python/include/python3.12/Python.h", "python/lib/libtcl9.0.dylib",
+                     "python/lib/python3.12/tkinter/__init__.py", "python/lib/python3.12/site-packages/pip/x.py",
+                     "python/lib/python3.12/test/test_os.py", "python/lib/python3.12/json/__pycache__/a.pyc"):
+            self.assertIsNone(keep(drop), drop)
 
     def test_manifest_lists_every_tool(self):
         with zipfile.ZipFile(self.out) as z:

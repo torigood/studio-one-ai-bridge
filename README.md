@@ -51,8 +51,7 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
    `bridge_setup`, which installs the extension, the control surface and its device entry.
 3. Start Studio One, open a song, and ask Claude for something, e.g. "Add a piano track".
 
-The extension runs with the macOS `python3`. If macOS asks to install the Command Line Tools
-the first time, accept; the server needs nothing else. The settings of the extension let you
+The extension brings its own Python (arm64 and Intel), so nothing else has to be installed. The settings of the extension let you
 change the Studio One app path and the user data folder (Preferences → Locations in Studio One).
 
 ## Install from a checkout (any MCP client)
@@ -264,6 +263,14 @@ macOS CoreMIDI. On Windows you would need a virtual MIDI port such as
 sends CC 119 on channel 16 to it. Until then, run **Track → AI Bridge - Run Jobs** by hand.
 Contributions welcome.
 
+## Third-party software in the .mcpb
+
+The Claude Desktop extension bundles CPython 3.12 from
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone) (Python Software
+Foundation License, see `python/darwin-*/lib/python3.12/LICENSE.txt` in the bundle; the builds
+include libraries such as OpenSSL, SQLite, zlib and libffi under their own licenses). This
+repository itself contains no third-party code.
+
 ## Repository layout
 
 ```
@@ -271,7 +278,7 @@ server/s1bridge/   MCP server: JSON-RPC loop, tools, song parser, mailbox, MIDI,
 server/run.py      entry point usable from any directory
 bridge/src/        Studio One extension source (JavaScript + XML)
 bridge/build.py    builds bridge/dist/aibridge.package (for inspection; setup builds it itself)
-packaging/         build_mcpb.py: Claude Desktop extension (.mcpb) into dist/
+packaging/         build_mcpb.py: Claude Desktop extension (.mcpb, with Python) into dist/; start.sh launcher
 surface/           "AI Bridge" control surface definition
 install/install.py older installer interface; setup/doctor/uninstall live in server/s1bridge/setup.py
 re/tools/          package reader and catalog extractor (run on your own installation)

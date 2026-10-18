@@ -619,7 +619,7 @@ def _offline_edit(path, write):
         error = str(e)
     if was_open:
         if config.IS_MAC:
-            subprocess.run(["open", "-a", config.APP, path], check=False)
+            subprocess.run(["/usr/bin/open", "-a", config.APP, path], check=False)
         else:
             os.startfile(path)  # UNVERIFIED on Windows
         reopened = _wait_for_bridge(60)

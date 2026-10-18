@@ -119,11 +119,26 @@ Why this is the main path: double-click install, no config editing, no Gatekeepe
 unsigned app (the `.mcpb` is a bundle Claude Desktop unpacks, not an app we ship) **[I]**, and
 it uses the user's existing Claude subscription.
 
-**[?]** Which Python runs a `python` type extension. If Claude Desktop uses the system
-`python3`, a Mac without Command Line Tools has only the `/usr/bin/python3` stub, which shows
-the "install developer tools" dialog. Test on a clean macOS user / VM. Fallbacks, in order:
-`uv` server type if Claude Desktop provides uv **[?]**; `binary` type with a bundled
-python-build-standalone runtime (~30 MB) **[?]** quarantine behaviour on that executable.
+**[O]** A `python` type extension runs the system `python3`, and a Mac without Command Line Tools
+has only the `/usr/bin/python3` stub (it shows the "install developer tools" dialog). So since
+2026-10-18 the bundle carries its own Python:
+
+- `binary` type, `mcp_config` = `/bin/sh ${__dirname}/bin/start.sh` (`packaging/start.sh`).
+  The launcher picks `python/darwin-arm64` or `python/darwin-x86_64` by `uname -m`, restores a
+  lost executable bit, and falls back to `/usr/bin/python3`. It uses absolute tool paths: with
+  an empty PATH `dirname`/`uname`/`pgrep` were not found (fixed in the launcher and in
+  `setup.studio_one_running`, `tools._open_in_daw`).
+- Python: python-build-standalone 20260929, CPython 3.12.14, `install_only_stripped`, pinned by
+  SHA-256 in `build_mcpb.py`, trimmed (no Tcl/Tk, tests, idle, pip, ensurepip, headers):
+  ~44 MB per arch unpacked, bundle 33 MB. `--no-python` still builds the small system-python
+  variant.
+- **[O]** Verified: unpacked bundle with `PATH=/nonexistent` on arm64 and on x86_64 under
+  Rosetta: `bridge_doctor` ok, `daw_list_tracks` from the running Studio One. Installed in
+  Claude Desktop from a copy marked as a Safari download (`com.apple.quarantine` on the .mcpb):
+  the extracted files carry no quarantine attribute (only `com.apple.provenance`), the
+  executable bit is kept, and the server runs on the bundled Python. Python is ad-hoc signed,
+  not notarized; no Gatekeeper prompt appeared. A Chat conversation listed the open song's tracks through it.
+- Not covered: numpy (audio analysis stays optional, `doctor` reports it), a real Intel Mac.
 
 ### Layer 2: CLI for other clients
 

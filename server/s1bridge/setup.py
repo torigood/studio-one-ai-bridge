@@ -132,7 +132,7 @@ def studio_one_running():
     if config.IS_WINDOWS:  # untested
         r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq Studio One.exe"], capture_output=True, text=True)
         return "Studio One.exe" in r.stdout
-    return subprocess.run(["pgrep", "-x", "studioapp"], capture_output=True).returncode == 0
+    return subprocess.run(["/usr/bin/pgrep", "-x", "studioapp"], capture_output=True).returncode == 0
 
 
 def build_catalog(paths, out):
