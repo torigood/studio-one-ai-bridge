@@ -1334,8 +1334,11 @@ def call(name, a):
     if name == "daw_status":
         mb = Mailbox()
         status = mb.read_json("status.json")
-        out = {"mailbox": mb.root, "status": status,
-               "poller": mb.read_json("poller.json"), "pending_jobs": mb.pending()}
+        # poller.json reports the bridge's idle poller, which is off on purpose (addIdleTask hangs Studio One
+        # 5.5); AIs read "running: false" as "live editing is off", so it is not reported. Jobs run through
+        # the AI Bridge MIDI button; status.loaded and daw_ping tell whether that works.
+        out = {"mailbox": mb.root, "status": status, "pending_jobs": mb.pending(),
+               "job_trigger": "virtual MIDI button 'AI Bridge' (normal; live editing works when daw_ping answers)"}
         out.update(_version_check(status))
         return out
 

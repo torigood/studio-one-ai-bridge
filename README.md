@@ -54,6 +54,27 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
 The extension brings its own Python (arm64 and Intel), so nothing else has to be installed. The settings of the extension let you
 change the Studio One app path and the user data folder (Preferences → Locations in Studio One).
 
+## ChatGPT (chat app)
+
+The ChatGPT app connects only to MCP servers on a public HTTPS address, so it cannot start this
+server itself. `share` runs the server over HTTP on 127.0.0.1 and puts a free Cloudflare quick tunnel
+(cloudflared, no account; downloaded once if it is not installed) in front of it:
+
+```bash
+python3 server/run.py share
+```
+
+It prints a connector URL `https://<words>.trycloudflare.com/<secret>/mcp`. In ChatGPT (Plus/Pro):
+Settings → Apps & Connectors → Advanced → Developer mode on → Create (custom MCP server): name
+`Studio One`, server URL = that URL, authentication **none**, confirm the warning. Then enable it in a
+chat and ask, e.g., "Studio One에서 daw_ping 해줘".
+
+- Anyone with the full URL can control Studio One and read your songs while `share` runs. Keep the
+  URL private, stop with Ctrl+C when done, and run `share --new-token` if it leaked (the secret is
+  kept in `<data dir>/share_token`).
+- The quick tunnel address changes on every start: edit the connector's URL after restarting.
+- `share --no-tunnel` serves only on `http://127.0.0.1:8765/<secret>/mcp` for local MCP-over-HTTP clients.
+
 ## Install from a checkout (any MCP client)
 
 ### 1. Get the code
