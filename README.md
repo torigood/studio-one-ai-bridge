@@ -1,5 +1,7 @@
 # Studio One AI Bridge
 
+English | [한국어](README.ko.md)
+
 Let an AI assistant (Claude, Codex/OpenAI agents, Gemini CLI, or any [MCP](https://modelcontextprotocol.io)
 client) read and operate **PreSonus Studio One 5**: list and summarise your songs, add tracks,
 write notes, load instruments and effects, set volume, pan and plug-in parameters.
@@ -363,7 +365,7 @@ bridge/src/        Studio One extension source (JavaScript + XML)
 bridge/build.py    builds bridge/dist/aibridge.package (for inspection; setup builds it itself)
 packaging/         build_mcpb.py: Claude Desktop extension (.mcpb, with Python) into dist/; start.sh launcher
 surface/           "AI Bridge" control surface definition
-install/install.py older installer interface; setup/doctor/uninstall live in server/s1bridge/setup.py
+install/           install.sh: one-line installer; install.py: older installer interface
 re/tools/          package reader and catalog extractor (run on your own installation)
 docs/              reverse-engineering notes, installer design
 tests/             python3 -m unittest discover -s tests
