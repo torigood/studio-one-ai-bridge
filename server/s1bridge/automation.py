@@ -80,22 +80,7 @@ def _read_mode(mixer_xml, uid):
     return mixer_xml[:start] + el + mixer_xml[end:], True
 
 
-def write_automation(path, track, param, points, replace=True, read_mode=True):
-    """Write an automation envelope for a track's mixer channel (instrument tracks: their instrument
-    channel). points: [{"beat" (quarter notes from song start) or "bar" (1-based), "value"}]; replace
-    (default) drops the old points between the first and last new point, else all old points stay."""
-    param = param.lower()
-    if param not in PARAMS:
-        raise songwrite.SongWriteError("unknown parameter %r (volume, pan, mute)" % param)
-    with Song(path) as s:
-        tracks = s.tracks()
-        sigs = s.time_signatures()
-    t = next((x for x in tracks if x["name"] == track or x["index"] == track), None)
-    if t is None:
-        raise songwrite.SongWriteError("no track %r" % track)
-    mixer = t.get("mixer")
-    if not mixer or not mixer.get("uid"):
-        raise songwrite.SongWriteError("track %r has no mixer channel in the saved song" % t["name"])
+def _beats(points, sigs, convert):
     new = []
     for p in points:
         if "beat" in p:
@@ -106,17 +91,164 @@ def write_automation(path, track, param, points, replace=True, read_mode=True):
             raise songwrite.SongWriteError("each point needs beat or bar")
         if beat < 0:
             raise songwrite.SongWriteError("point before the song start: %s" % beat)
-        new.append({"start": beat, "value": normalize(param, p.get("value"))})
+        new.append({"start": beat, "value": convert(p.get("value"))})
     if not new:
         raise songwrite.SongWriteError("no points")
-    new.sort(key=lambda e: e["start"])
+    return sorted(new, key=lambda e: e["start"])
 
-    title = PARAMS[param]
-    identity = "param:///AudioMixer/%s/%s" % (mixer["uid"], param)
-    member = "Envelopes/%s/%s.envelopex" % (t["name"], title)
+
+def _track(path, track):
+    with Song(path) as s:
+        tracks = s.tracks()
+        sigs = s.time_signatures()
+    t = next((x for x in tracks if x["name"] == track or x["index"] == track), None)
+    if t is None:
+        raise songwrite.SongWriteError("no track %r" % track)
+    return t, sigs
+
+
+def write_automation(path, track, param, points, replace=True, read_mode=True):
+    """Write an automation envelope for a track's mixer channel (instrument tracks: their instrument
+    channel). points: [{"beat" (quarter notes from song start) or "bar" (1-based), "value"}]; replace
+    (default) drops the old points between the first and last new point, else all old points stay."""
+    param = param.lower()
+    if param not in PARAMS:
+        raise songwrite.SongWriteError("unknown parameter %r (volume, pan, mute)" % param)
+    t, sigs = _track(path, track)
+    mixer = t.get("mixer")
+    if not mixer or not mixer.get("uid"):
+        raise songwrite.SongWriteError("track %r has no mixer channel in the saved song" % t["name"])
+    new = _beats(points, sigs, lambda v: normalize(param, v))
+
+    def mode(z_read):
+        xml = z_read("Devices/audiomixer.xml")
+        if xml is None:
+            return {}, False
+        xml, changed = _read_mode(xml, mixer["uid"])
+        return ({"Devices/audiomixer.xml": xml} if changed else {}), changed
+    res = _write_lane(path, t, "param:///AudioMixer/%s/%s" % (mixer["uid"], param), "%s/%s" % (mixer["type"], param),
+                      PARAMS[param], COLORS[param], new, replace, mode if read_mode else None)
+    res.update(param=param, channel=mixer.get("label"))
+    return res
+
+
+# ---- plug-in parameters -----------------------------------------------------------------------
+
+def _effect_device(z_read, mixer, slot=None, plugin=None):
+    """(device uid, class id, slot name, plug-in name) of an insert on the track's channel."""
+    from . import effects
+    xml = z_read("Devices/audiomixer.xml")
+    a, b = effects._channel_span(xml, mixer["type"], mixer["name"])
+    slots = effects._slots(xml, a, b)
+    hits = [x for x in slots if (slot and x[0] == slot) or (plugin and x[1] and x[1].lower() == plugin.lower())]
+    if not hits and not slot and not plugin and len(slots) == 1:
+        hits = slots
+    if len(hits) != 1:
+        raise songwrite.SongWriteError("insert %r not found on %s (slots: %s)" % (
+            slot or plugin, mixer.get("label"), ["%s %s" % (x[0], x[1]) for x in slots]))
+    name, dev, _preset, s0, s1 = hits[0]
+    block = xml[s0:s1]
+    cls = re.search(r'<UID x:id="deviceClassID" uid="([^"]+)"/>', block)
+    uid = re.search(r'x:id="deviceData"[^>]*>\s*<UID x:id="uniqueID" uid="([^"]+)"/>', block)
+    if not (cls and uid):
+        raise songwrite.SongWriteError("insert %s has no device IDs in the saved song" % name)
+    return uid.group(1), cls.group(1), name, dev
+
+
+def _instrument_device(z_read, track_name):
+    """(device uid, class id, slot name, plug-in name, slot span) of the instrument a music track plays."""
+    mt = z_read("Devices/musictrackdevice.xml") or ""
+    m = re.search(r'<MusicTrackChannel\b[^>]*\blabel=%s[^>]*>(.*?)</MusicTrackChannel>' % re.escape(_attr(track_name)),
+                  mt, re.S)
+    dest = m and re.search(r'x:id="destination" objectID="(\{[^}]+\})/', m.group(1))
+    if not dest:
+        raise songwrite.SongWriteError("track %r plays no instrument in the saved song" % track_name)
+    uid = dest.group(1)
+    from . import effects
+    sy = z_read("Devices/audiosynthfolder.xml") or ""
+    i = sy.find('uid="%s"' % uid)
+    if i < 0:
+        raise songwrite.SongWriteError("instrument %s of track %r not found" % (uid, track_name))
+    s0 = max(x.start() for x in re.finditer(r'<Attributes name="Inst\d+">', sy[:i]))
+    s1 = effects._block_end(sy, s0)
+    block = sy[s0:s1]
+    cls = re.search(r'<UID x:id="deviceClassID" uid="([^"]+)"/>', block)
+    dev = re.search(r'x:id="deviceData" name="([^"]*)"', block)
+    slot = re.match(r'<Attributes name="([^"]+)">', block).group(1)
+    return uid, cls.group(1) if cls else None, slot, dev.group(1) if dev else None, (s0, s1)
+
+
+def write_plugin_automation(path, track, param, points, instrument=False, slot=None, plugin=None, title=None,
+                            replace=True, read_mode=True):
+    """Automate a plug-in parameter: an insert effect on the track's channel (slot FX01.. or plugin
+    name) or, with instrument=true, the instrument the track plays. param: ID as in
+    library_plugin_params ('lmffreq', 'vstp54'). values: normalized 0..1 (the knob's travel)."""
+    t, sigs = _track(path, track)
+
+    def norm(v):
+        f = float(v)
+        if not 0 <= f <= 1:
+            raise songwrite.SongWriteError("plug-in automation values are normalized 0..1: %s" % v)
+        return f
+    new = _beats(points, sigs, norm)
     with songwrite.zipfile.ZipFile(path) as z:
-        xml = z.read("Song/song.xml").decode("utf-8-sig")
         names = set(z.namelist())
+
+        def z_read(n):
+            return z.read(n).decode("utf-8-sig") if n in names else None
+        if instrument:
+            uid, cls, where, dev, span = _instrument_device(z_read, t["name"])
+            identity = "param:///Synths/%s/%s" % (uid, param)
+        else:
+            mixer = t.get("mixer")
+            if not mixer or not mixer.get("uid"):
+                raise songwrite.SongWriteError("track %r has no mixer channel in the saved song" % t["name"])
+            uid, cls, where, dev = _effect_device(z_read, mixer, slot, plugin)
+            identity = "param:///AudioMixer/%s/Inserts/%s/%s" % (mixer["uid"], uid, param)
+
+    def mode(z_read):
+        if instrument:
+            sy = z_read("Devices/audiosynthfolder.xml")
+            s0, s1 = span
+            block = sy[s0:s1]
+            m = re.search(r'<Attributes x:id="Automation" mode="0"/>', block)
+            if not m:
+                return {}, False
+            block = block[:m.start()] + '<Attributes x:id="Automation" mode="1"/>' + block[m.end():]
+            return {"Devices/audiosynthfolder.xml": sy[:s0] + block + sy[s1:]}, True
+        xml, changed = _read_mode(z_read("Devices/audiomixer.xml"), t["mixer"]["uid"])
+        return ({"Devices/audiomixer.xml": xml} if changed else {}), changed
+    _check_param(dev, param)
+    res = _write_lane(path, t, identity, "%s/%s" % (cls, param), title or param, "FF42FFC8", new, replace,
+                      mode if read_mode else None)
+    res.update(param=param, device=dev, slot=where)
+    return res
+
+
+def _check_param(device, param):
+    """Native plug-ins: the ID must be one of the parameters seen in its presets (VST 'vstp<n>' IDs and
+    plug-ins without presets are not checked)."""
+    import difflib
+    from . import library
+    if not device or re.match(r"vstp\d+$", param):
+        return
+    known = library.native_params(re.sub(r"\s+\d+$", "", device))
+    if known and param not in known:
+        close = difflib.get_close_matches(param, list(known), 5, 0.4)
+        raise songwrite.SongWriteError("%s has no parameter %r (library_plugin_params lists them)%s" % (
+            device, param, "; close: %s" % ", ".join(close) if close else ""))
+
+
+def _write_lane(path, t, identity, meta, title, color, new, replace, mode):
+    """Merge points into the track's automation lane with this identity (creating the lane) and
+    write song.xml, the envelope and, via mode(z_read) -> ({member: xml}, changed), the Read mode."""
+    member = "Envelopes/%s/%s.envelopex" % (t["name"], title.replace("/", "-"))
+    with songwrite.zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+
+        def z_read(n):
+            return z.read(n).decode("utf-8-sig") if n in names else None
+        xml = z_read("Song/song.xml")
         a, b = _track_element(xml, t["name"])
         el = xml[a:b]
         region = re.search(r'<AutomationRegion\b[^>]*identity=%s[^>]*>.*?</AutomationRegion>' % re.escape(_attr(identity)),
@@ -124,10 +256,10 @@ def write_automation(path, track, param, points, replace=True, read_mode=True):
         if region:
             url = re.search(r'url="media:///([^"]+)"', region.group(0))
             member = url.group(1) if url else member
-        mixer_xml = z.read("Devices/audiomixer.xml").decode("utf-8-sig") if "Devices/audiomixer.xml" in names else None
         old = []
         if member in names:
             old = (ubjson.loads(z.read(member)) or {}).get("events") or []
+        extra, mode_set = mode(z_read) if mode else ({}, False)
     if replace:
         lo, hi = new[0]["start"], new[-1]["start"]
         old = [e for e in old if not lo <= float(e.get("start", 0)) <= hi]
@@ -136,8 +268,7 @@ def write_automation(path, track, param, points, replace=True, read_mode=True):
     if not region:
         reg = ('\n\t\t\t\t\t<AutomationRegion title=%s identity=%s\n\t\t\t\t\t                  metaIdentity=%s color="%s" mute="0">'
                '\n\t\t\t\t\t\t<Url x:id="points" type="1" url=%s/>\n\t\t\t\t\t</AutomationRegion>'
-               % (_attr(title), _attr(identity), _attr("%s/%s" % (mixer["type"], param)), COLORS[param],
-                  _attr("media:///" + member)))
+               % (_attr(title), _attr(identity), _attr(meta), color, _attr("media:///" + member)))
         lst = re.search(r'(<Attributes x:id="AutomationRegionList"[^>]*?)(/>|>)', el)
         if lst and lst.group(2) == ">":
             el = el[:lst.end()] + reg + el[lst.end():]
@@ -150,13 +281,9 @@ def write_automation(path, track, param, points, replace=True, read_mode=True):
                   "\n\t\t\t\t</Attributes>" + el[at:])
         xml = xml[:a] + el + xml[b:]
     members = {"Song/song.xml": ("\ufeff" + xml).encode("utf-8"), member: ubjson.dumps({"events": events})}
-    mode_set = False
-    if read_mode and mixer_xml is not None:
-        mixer_xml, mode_set = _read_mode(mixer_xml, mixer["uid"])
-        if mode_set:
-            members["Devices/audiomixer.xml"] = ("\ufeff" + mixer_xml).encode("utf-8")
+    for n, text in extra.items():
+        members[n] = ("\ufeff" + text).encode("utf-8")
     bak = songwrite.backup(path)
     songwrite.rewrite_zip(path, members)
-    return {"track": t["name"], "param": param, "channel": mixer.get("label"), "points_written": len(new),
-            "envelope_points": len(events), "envelope_file": member, "new_lane": not region,
-            "read_mode_set": mode_set, "backup": bak}
+    return {"track": t["name"], "points_written": len(new), "envelope_points": len(events), "envelope_file": member,
+            "new_lane": not region, "read_mode_set": mode_set, "backup": bak}

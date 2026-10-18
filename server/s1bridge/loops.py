@@ -256,6 +256,95 @@ def add_loop(path, track, loop, start_beats, length_beats=None):
             "events": [{"start_beats": s, "length_beats": l} for s, l in events], "backup": bak}
 
 
+def audio_seconds(path):
+    """Length of a WAV or AIFF file in seconds (standard library readers)."""
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".wav", ".wave"):
+            import wave
+            with wave.open(path) as w:
+                return w.getnframes() / float(w.getframerate())
+        if ext in (".aif", ".aiff"):
+            import aifc  # removed in Python 3.13; the bundled Python is 3.12
+            with aifc.open(path) as w:
+                return w.getnframes() / float(w.getframerate())
+    except Exception as e:  # wave.Error, EOFError, ImportError: unreadable for us
+        raise SongWriteError("cannot read %s: %s (use a PCM WAV or AIFF file)" % (os.path.basename(path), e))
+    raise SongWriteError("only WAV and AIFF files can be placed (got %s); convert it first" % ext)
+
+
+def seconds_to_beats(tempo_map, start_beats, seconds):
+    """Quarter notes covered by seconds of audio starting at start_beats, through the song's tempo
+    segments ([{start_beats, bpm}], constant tempo per segment)."""
+    segs = sorted((s for s in tempo_map if s.get("bpm")), key=lambda s: s["start_beats"]) or [
+        {"start_beats": 0.0, "bpm": 120.0}]
+    beat, left = float(start_beats), float(seconds)
+    while left > 1e-9:
+        cur = [s for s in segs if s["start_beats"] <= beat + 1e-9] or segs[:1]
+        bpm = cur[-1]["bpm"]
+        nxt = [s["start_beats"] for s in segs if s["start_beats"] > beat + 1e-9]
+        span = (nxt[0] - beat) * 60.0 / bpm if nxt else left
+        step = min(span, left)
+        beat += step * bpm / 60.0
+        left -= step
+    return beat - float(start_beats)
+
+
+def add_audio_file(path, track, file, start_beats, copy=True):
+    """Place a WAV/AIFF file from disk on an audio track at start_beats, at its own speed (no
+    stretching). copy (default) copies it into the song's Media folder first, as Studio One's
+    import does, so the song keeps working when the original moves."""
+    from .song import Song
+    src = os.path.abspath(os.path.expanduser(file))
+    if not os.path.isfile(src):
+        raise SongWriteError("no such file: %s" % file)
+    seconds = audio_seconds(src)
+    target = src
+    if copy:
+        media = os.path.join(os.path.dirname(os.path.abspath(path)), "Media")
+        target = os.path.join(media, os.path.basename(src))
+        if os.path.abspath(target) != src:
+            stem, ext = os.path.splitext(target)
+            n = 1
+            while os.path.exists(target) and not _same_file(src, target):
+                n += 1
+                target = "%s (%d)%s" % (stem, n, ext)
+            if not os.path.exists(target):
+                os.makedirs(media, exist_ok=True)
+                import shutil
+                shutil.copy2(src, target)
+    with Song(path) as s:
+        tempo_map = s.tempo_map()
+    length = seconds_to_beats(tempo_map, start_beats, seconds)
+    url = "file://" + target  # Studio One writes the path as is (spaces, non-ASCII), not percent-encoded
+    name = os.path.splitext(os.path.basename(src))[0]
+
+    song_xml, pool_xml = _read_song(path)
+    _s, _e, tid, track_name = _audio_track(song_xml, track)
+    m = re.search(r'<AudioClip mediaID="([^"]+)"[^>]*>\s*<Url x:id="path" type="1" url="%s"/>' % re.escape(_esc(url)),
+                  pool_xml)
+    if m:
+        cid = m.group(1)
+    else:
+        cid = _new_id()
+        pool_xml = _add_clips(pool_xml, _clip_xml(cid, url, None, 1))
+    song_xml = _add_events(song_xml, track, _event_xml(cid, tid, name, start_beats, length))
+    bak = backup(path)
+    _write_song(path, song_xml, pool_xml)
+    return {"track": track_name, "file": target, "copied": target != src, "seconds": round(seconds, 3),
+            "start_beats": float(start_beats), "length_beats": round(length, 4), "backup": bak}
+
+
+def _same_file(a, b):
+    try:
+        if os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            return fa.read() == fb.read()
+    except OSError:
+        return False
+
+
 def fill_index_song(path, kind="audioloop"):
     """Put every loop not yet indexed into the first audio track, 1 beat apart."""
     ids = package_ids()

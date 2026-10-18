@@ -23,6 +23,7 @@ from . import effects
 from . import setup
 from . import clients
 from . import automation
+from . import presets
 import time
 from .keys import key_from_notes
 import subprocess
@@ -92,6 +93,10 @@ TOOLS = [
      "description": "Audio effect plug-ins installed for Studio One (name, class_id, format, vendor). "
                     "Use class_id with daw_insert_effect.",
      "inputSchema": _schema({})},
+    {"name": "library_presets",
+     "description": "Preset files of an instrument by plug-in name (e.g. 'Mai Tai', 'Mojito'), filtered by words in "
+                    "name or folder (e.g. 'warm pad'); for song_load_preset.",
+     "inputSchema": _schema({"plugin": _S, "query": _S, "limit": _I}, ["plugin"])},
     {"name": "library_plugin_params",
      "description": "Parameters of a plug-in for daw_plugin_param. Native (Pro EQ, Room Reverb, Mojito...): IDs and "
                     "ranges from factory presets, plus preset names. VST3 (Vital, Surge XT...): 'vstp<id>' with titles, "
@@ -143,6 +148,32 @@ TOOLS = [
                                  "type": "object", "properties": {"bar": _I, "beat": _N, "value": {"type": ["number", "string"]}},
                                  "required": ["value"], "additionalProperties": False}},
                              "replace": {"type": "boolean"}}, ["path", "track", "param", "points"])},
+    {"name": "song_write_plugin_automation",
+     "description": "Automate a plug-in parameter (filter sweep, reverb rising...): an insert effect on the track's "
+                    "channel (slot FX01.. or plugin name; daw_list_effects) or, with instrument=true, the instrument "
+                    "the track plays. param: ID from library_plugin_params ('lmffreq', 'vstp54'). points [{bar or "
+                    "beat, value 0..1}] (the knob's travel, as daw_plugin_param normalized), straight lines between. "
+                    "title names the lane. Sets automation Read.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK, "param": _S, "instrument": {"type": "boolean"},
+                             "slot": _S, "plugin": _S, "title": _S,
+                             "points": {"type": "array", "items": _schema({"bar": _I, "beat": _N, "value": _N},
+                                                                          ["value"])},
+                             "replace": {"type": "boolean"}}, ["path", "track", "param", "points"])},
+    {"name": "song_set_tempo_map",
+     "description": "Replace the tempo map with tempo changes: [{bar or beat, bpm, ramp?}] (the first applies from "
+                    "the song start; ramp=true glides linearly to the next change, e.g. a ritardando).",
+     "inputSchema": _schema({"path": _SONG, "changes": {"type": "array", "items": _schema(
+         {"bar": _I, "beat": _N, "bpm": _N, "ramp": {"type": "boolean"}}, ["bpm"])}}, ["path", "changes"])},
+    {"name": "song_add_audio",
+     "description": "Place a WAV or AIFF file from disk (a sample, vocal, bounce) on an existing AUDIO track at "
+                    "start_beats, at its own speed. It is copied into the song's Media folder unless copy=false.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK, "file": _S, "start_beats": _N,
+                             "copy": {"type": "boolean"}}, ["path", "track", "file", "start_beats"])},
+    {"name": "song_load_preset",
+     "description": "Load a preset into the instrument a track plays (name or file path from library_presets): "
+                    "Studio One instruments (Mai Tai, Mojito, Impact, SampleOne) and .vstpreset/.aupreset files. "
+                    "Presets inside a plug-in's own browser (Vital, BBC SO) cannot be loaded this way.",
+     "inputSchema": _schema({"path": _SONG, "track": _TRACK, "preset": _S}, ["path", "track", "preset"])},
     {"name": "song_add_send",
      "description": "Add a send from a track or mixer channel to an EXISTING FX channel or bus (destination = its label, "
                     "e.g. 'Room Reverb'), so tracks share one reverb. level_db (default -6), pan -1..1, prefader.",
@@ -1221,6 +1252,19 @@ def call(name, a):
     if name == "song_write_automation":
         return _offline_edit(_song_path(a["path"]), lambda p: automation.write_automation(
             p, a["track"], a["param"], a["points"], a.get("replace", True)))
+    if name == "song_write_plugin_automation":
+        return _offline_edit(_song_path(a["path"]), lambda p: automation.write_plugin_automation(
+            p, a["track"], a["param"], a["points"], a.get("instrument", False), a.get("slot"), a.get("plugin"),
+            a.get("title"), a.get("replace", True)))
+    if name == "song_set_tempo_map":
+        return _offline_edit(_song_path(a["path"]), lambda p: songwrite.write_tempo_map(p, a["changes"]))
+    if name == "song_add_audio":
+        return _offline_edit(_song_path(a["path"]), lambda p: loops.add_audio_file(
+            p, a["track"], a["file"], a["start_beats"], a.get("copy", True)))
+    if name == "song_load_preset":
+        return _offline_edit(_song_path(a["path"]), lambda p: presets.load_preset(p, a["track"], a["preset"]))
+    if name == "library_presets":
+        return presets.find(a["plugin"], a.get("query", ""), a.get("limit", 60))
     if name == "song_add_send":
         if a.get("track") is None and a.get("mixer_channel") is None:
             raise ToolError("pass track or mixer_channel")

@@ -185,6 +185,62 @@ def write_time_signatures(path, signatures):
             "backup": bak}
 
 
+TEMPO_MIN, TEMPO_MAX = 10.0, 400.0  # the transport's tempo range; the tempo envelope is normalized to it
+TEMPO_END = "1.7976931348623156386368421785227527018228425601508e+200"  # Studio One's open end
+
+
+def write_tempo_map(path, changes):
+    """Replace the song's tempo map. changes: [{"bar" (1-based) or "beat", "bpm", "ramp": bool}];
+    the first is moved to the song start. ramp=true glides linearly from this point to the next one.
+    song.xml: TempoMap > Attributes envelope (EnvelopePoint value = (bpm - 10) / 390) and one
+    TempoMapSegment per point: start/end in quarter notes, tempo in seconds per quarter, curveType
+    0 constant, 1 linear."""
+    import re
+    with Song(path) as song:
+        sigs = song.time_signatures()
+    pts = []
+    for c in changes:
+        if "beat" in c:
+            beat = float(c["beat"])
+        elif "bar" in c:
+            beat = bar_to_beats(sigs, int(c["bar"]))
+        else:
+            raise SongWriteError("each tempo change needs bar or beat")
+        bpm = float(c["bpm"])
+        if not TEMPO_MIN <= bpm <= TEMPO_MAX:
+            raise SongWriteError("tempo %s outside %g..%g BPM" % (bpm, TEMPO_MIN, TEMPO_MAX))
+        pts.append((beat, bpm, bool(c.get("ramp"))))
+    if not pts:
+        raise SongWriteError("no tempo changes")
+    pts.sort(key=lambda p: p[0])
+    if len({round(p[0], 6) for p in pts}) != len(pts):
+        raise SongWriteError("two tempo changes at the same position")
+    pts[0] = (0.0,) + pts[0][1:]
+
+    def num(v):
+        return ("%.10f" % v).rstrip("0").rstrip(".")
+
+    env, segs = [], []
+    for i, (beat, bpm, ramp) in enumerate(pts):
+        last = i == len(pts) - 1
+        env.append('\n\t\t\t\t\t<EnvelopePoint%s value="%s"/>'
+                   % ("" if beat == 0 else ' start="%s"' % num(beat), num((bpm - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN))))
+        segs.append('\n\t\t\t\t<TempoMapSegment curveType="%d" start="%s" end="%s" tempo="%s"/>'
+                    % (1 if ramp and not last else 0, num(beat), TEMPO_END if last else num(pts[i + 1][0]),
+                       repr(60.0 / bpm)))
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("Song/song.xml").decode("utf-8-sig")
+    m = re.search(r'(<TempoMap x:id="tempoMap">)(.*?)(\s*</TempoMap>)', xml, re.S)
+    if not m:
+        raise SongWriteError("song has no TempoMap")
+    body = '\n\t\t\t\t<Attributes x:id="envelope">%s\n\t\t\t\t</Attributes>%s' % ("".join(env), "".join(segs))
+    xml = xml[:m.start(2)] + body + xml[m.end(2):]
+    bak = backup(path)
+    rewrite_zip(path, {"Song/song.xml": ("\ufeff" + xml).encode("utf-8")})
+    return {"tempo_map": [{"beat": b, "bpm": t, "ramp_to_next": r and i < len(pts) - 1}
+                          for i, (b, t, r) in enumerate(pts)], "backup": bak}
+
+
 def bar_to_beats(signatures, bar):
     """Quarter notes from song start to the first beat of a 1-based bar.
     signatures: Song.time_signatures() ([{start (quarter notes), numerator, denominator}])."""
