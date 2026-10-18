@@ -39,6 +39,10 @@ class McpbTests(unittest.TestCase):
         self.assertEqual([t["name"] for t in m["tools"]], [t["name"] for t in tools.TOOLS])
         self.assertTrue(all(t["description"] for t in m["tools"]))
 
+    def test_server_version_matches_project(self):
+        from s1bridge.__main__ import SERVER_INFO
+        self.assertEqual(SERVER_INFO["version"], build_mcpb.project_version())
+
     def test_unsubstituted_setting_falls_back_to_default(self):
         with mock.patch.dict(os.environ, {"X_TEST": "${user_config.studio_one_app}"}):
             self.assertEqual(config._env("X_TEST", "dflt"), "dflt")

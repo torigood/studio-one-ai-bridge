@@ -28,8 +28,8 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
   `.song` files, the plug-in list and Sound Set file names. They never write, except
   `song_write_cc`, `song_add_loop`, `song_write_chords` and `song_set_time_signatures` (Studio One's
   scripting API cannot create these). If the song is open, these save it, close it (surface CC 116/115),
-  write and reopen it by themselves (~8 s, undo history is lost). Reinstall the surface (`--surface`)
-  after updating, or the close step cannot happen.
+  write and reopen it by themselves (~8 s, undo history is lost). Run setup again after updating,
+  or the close step cannot happen.
 - **Live tools** (`daw_*`) need the AI Bridge extension installed in Studio One. The server
   drops a job file in a mailbox folder and presses a virtual MIDI button; a small control
   surface maps that button to the extension's "Run Jobs" command, which runs the job in the open
@@ -44,8 +44,9 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
 
 ## Quick start: Claude Desktop
 
-1. Get `studio-one-ai-bridge-<version>.mcpb` (build it with `python3 packaging/build_mcpb.py`, it
-   lands in `dist/`) and double-click it. Claude Desktop shows the extension; click **Install**.
+1. Download `studio-one-ai-bridge-<version>.mcpb` from
+   [Releases](https://github.com/torigood/studio-one-ai-bridge/releases) (or build it with
+   `python3 packaging/build_mcpb.py`, it lands in `dist/`) and double-click it. Claude Desktop shows the extension; click **Install**.
 2. Save your song and quit Studio One, then ask Claude: "Set up Studio One." It runs
    `bridge_setup`, which installs the extension, the control surface and its device entry.
 3. Start Studio One, open a song, and ask Claude for something, e.g. "Add a piano track".
@@ -59,7 +60,7 @@ change the Studio One app path and the user data folder (Preferences → Locatio
 ### 1. Get the code
 
 ```bash
-git clone https://github.com/<you>/studio-one-ai-bridge.git
+git clone https://github.com/torigood/studio-one-ai-bridge.git
 cd studio-one-ai-bridge
 python3 -m unittest discover -s tests
 ```
