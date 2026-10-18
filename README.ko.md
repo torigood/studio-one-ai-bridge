@@ -240,6 +240,10 @@ python3 server/run.py uninstall --apply
 | `daw_add_bus`, `daw_set_output` | 채널을 새 버스로 묶기, 채널 출력을 버스·FX·Main으로 |
 | `song_write_automation` | 트랙의 볼륨·팬·뮤트 오토메이션 (페이드, 라이드) |
 | `song_write_sections` | 어레인저 트랙의 섹션 (Intro, Verse, Chorus...) |
+| `song_set_tempo_map` | 곡 중간 템포 변화와 점점 빠르게·느리게 (리타르단도) |
+| `song_add_audio` | 내 WAV/AIFF 파일(샘플, 보컬)을 오디오 트랙에 넣기. 곡의 Media 폴더로 복사 |
+| `song_write_plugin_automation` | 이펙트·악기 파라미터 오토메이션 (필터 스윕 등) |
+| `library_presets`, `song_load_preset` | 악기 프리셋 찾기와 불러오기 (Mai Tai, Mojito, Impact, SampleOne, .vstpreset/.aupreset 파일) |
 | `daw_bounce` | 트랙을 오디오로 렌더링하고 분석 |
 | `daw_list_events`, `daw_repeat_event`, `daw_edit_event`, `daw_delete_event` | 트랙의 이벤트 보기, 반복, 이동·길이·뮤트, 삭제 |
 | `daw_add_instrument`, `daw_insert_effect`, `daw_list_effects`, `daw_bypass_effect`, `song_remove_effect` | 악기 불러오기, 이펙트 넣기·보기·바이패스·빼기 |
@@ -247,7 +251,7 @@ python3 server/run.py uninstall --apply
 | `daw_plugin_param`, `daw_scan_plugin_params` | 플러그인 파라미터 읽기·쓰기 |
 | `daw_command` | Studio One 명령 실행 (위험한 명령은 막음) |
 | `daw_transport` | 재생·정지 |
-| `daw_inspect_*`, `daw_probe`, `daw_dump_host`, `daw_call` | 개발용 API 탐색 (`daw_call`은 곡을 바꿀 수 있음) |
+| `daw_inspect_*`, `daw_probe`, `daw_dump_host`, `daw_call` | 개발용 API 탐색 (`daw_call`은 곡을 바꿀 수 있음). `S1BRIDGE_DEV_TOOLS=1`일 때만 목록에 보임 |
 
 설명에 `EXPERIMENTAL`이 붙은 도구는 완전히 검증되지 않은 API를 씁니다.
 

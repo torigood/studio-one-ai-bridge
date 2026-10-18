@@ -306,6 +306,10 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_add_bus`, `daw_set_output` | Group channels into a new bus; route a channel to a bus, FX channel or Main |
 | `song_write_automation` | Volume, pan or mute automation (fades, rides) for a track (offline with auto reopen; sets the channel to Read) |
 | `song_write_sections` | Arranger sections (Intro, Verse, Chorus...) shown on the Arranger Track (offline with auto reopen) |
+| `song_set_tempo_map` | Tempo changes and ramps (ritardando) through the song (offline with auto reopen) |
+| `song_add_audio` | Place your own WAV/AIFF (sample, vocal) on an audio track; copied into the song's Media folder (offline) |
+| `song_write_plugin_automation` | Automate an effect or instrument parameter, e.g. a filter sweep (offline with auto reopen) |
+| `library_presets`, `song_load_preset` | Find and load instrument presets (Mai Tai, Mojito, Impact, SampleOne, .vstpreset/.aupreset files; offline) |
 | `daw_bounce` | Render a track to audio and analyze it |
 | `daw_list_events`, `daw_repeat_event`, `daw_edit_event`, `daw_delete_event` | Events on a track; repeat a loop or part back to back; move, resize, mute; delete |
 | `daw_add_instrument`, `daw_insert_effect`, `daw_list_effects`, `daw_bypass_effect`, `song_remove_effect` | Load instruments; insert, list, bypass and remove effects (removal is offline with auto reopen) |
@@ -313,8 +317,8 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_plugin_param`, `daw_scan_plugin_params` | Read/set plug-in parameters |
 | `daw_command` | Run a Studio One command (dangerous ones blocked) |
 | `daw_transport` | Play / stop |
-| `daw_inspect_track`, `daw_inspect_mixer`, `daw_probe`, `daw_dump_host` | Read-only API discovery, for development |
-| `daw_call` | Call script methods with tracks/events as arguments (API experiments; can edit the song) |
+| `daw_inspect_track`, `daw_inspect_mixer`, `daw_probe`, `daw_dump_host` | Read-only API discovery, for development (listed only with `S1BRIDGE_DEV_TOOLS=1`) |
+| `daw_call` | Call script methods with tracks/events as arguments (API experiments; can edit the song; listed only with `S1BRIDGE_DEV_TOOLS=1`) |
 
 Tools marked `EXPERIMENTAL` in their description use API details that are not fully verified.
 
