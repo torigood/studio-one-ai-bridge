@@ -56,6 +56,17 @@ change the Studio One app path and the user data folder (Preferences → Locatio
 
 ## ChatGPT (chat app)
 
+**Step-by-step guide (Korean): [docs/chatgpt-guide.md](docs/chatgpt-guide.md).** Without a checkout or
+Claude Desktop, one command installs the release (with its own Python), the Studio One side and
+background sharing, and copies the connector URL (Studio One must be quit):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/torigood/studio-one-ai-bridge/main/install/install.sh | sh
+```
+
+It adds a `studio-one-bridge` command (`studio-one-bridge share --status`, `studio-one-bridge doctor`).
+`sh -s -- --uninstall` removes it again. The rest of this section is the same from a checkout.
+
 The ChatGPT app connects only to MCP servers on a public HTTPS address, so it cannot start this
 server itself. `share` runs the server over HTTP on 127.0.0.1 and puts a free Cloudflare quick tunnel
 (cloudflared, no account; downloaded once if it is not installed) in front of it:
