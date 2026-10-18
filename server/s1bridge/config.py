@@ -29,7 +29,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 
 def _env(name, default):
     v = os.environ.get(name)
-    return os.path.expanduser(v) if v else default
+    # Claude Desktop extension settings: it passes a default like "${HOME}/Music/Studio One 5"
+    # without substituting it (seen 2026-10-18, 2.42304.0). An empty or other unsubstituted
+    # "${...}" means unset.
+    if v:
+        v = v.replace("${HOME}", os.path.expanduser("~"))
+    return os.path.expanduser(v) if v and "${" not in v else default
 
 
 def _home(*parts):

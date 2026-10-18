@@ -42,7 +42,19 @@ Studio One ── AI Bridge extension (JS) ── "AI Bridge - Run Jobs" ──�
   for the optional audio analysis.
 - An MCP client: Claude Code, Claude Desktop, the OpenAI Agents SDK, ...
 
-## Install
+## Quick start: Claude Desktop
+
+1. Get `studio-one-ai-bridge-<version>.mcpb` (build it with `python3 packaging/build_mcpb.py`, it
+   lands in `dist/`) and double-click it. Claude Desktop shows the extension; click **Install**.
+2. Save your song and quit Studio One, then ask Claude: "Set up Studio One." It runs
+   `bridge_setup`, which installs the extension, the control surface and its device entry.
+3. Start Studio One, open a song, and ask Claude for something, e.g. "Add a piano track".
+
+The extension runs with the macOS `python3`. If macOS asks to install the Command Line Tools
+the first time, accept; the server needs nothing else. The settings of the extension let you
+change the Studio One app path and the user data folder (Preferences → Locations in Studio One).
+
+## Install from a checkout (any MCP client)
 
 ### 1. Get the code
 
@@ -258,6 +270,7 @@ server/s1bridge/   MCP server: JSON-RPC loop, tools, song parser, mailbox, MIDI,
 server/run.py      entry point usable from any directory
 bridge/src/        Studio One extension source (JavaScript + XML)
 bridge/build.py    builds bridge/dist/aibridge.package (for inspection; setup builds it itself)
+packaging/         build_mcpb.py: Claude Desktop extension (.mcpb) into dist/
 surface/           "AI Bridge" control surface definition
 install/install.py older installer interface; setup/doctor/uninstall live in server/s1bridge/setup.py
 re/tools/          package reader and catalog extractor (run on your own installation)

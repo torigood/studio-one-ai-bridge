@@ -107,8 +107,13 @@ Move `install/install.py` logic into the package so it works without a checkout:
   - `bridge_doctor` — runs doctor, returns findings the model can explain.
 - `daw_status` / `daw_ping`: when the bridge is missing or outdated, the error says
   "run bridge_setup" so the model offers it without being told.
-- Build: `bridge/build_mcpb.py` collects files, then `npx @anthropic-ai/mcpb pack`. Attach the
-  `.mcpb` to each GitHub Release.
+- Build: `packaging/build_mcpb.py` writes the ZIP itself (stdlib, manifest generated from
+  `tools.TOOLS` so the tool list stays in sync). Attach the `.mcpb` to each GitHub Release.
+- **[O]** Claude Desktop 2.42304.0 ships no Python or uv in its bundle, so the `python` type runs
+  the system `python3` (`mcp_config.command`).
+- **[O]** Claude Desktop passes a `user_config` default such as `${HOME}/Music/Studio One 5`
+  into `env` without substituting `${HOME}` (process environment, 2026-10-18). `config._env`
+  expands `${HOME}` itself and treats any other `${...}` as unset.
 
 Why this is the main path: double-click install, no config editing, no Gatekeeper prompt for an
 unsigned app (the `.mcpb` is a bundle Claude Desktop unpacks, not an app we ship) **[I]**, and
@@ -165,7 +170,7 @@ optional manual steps.
 | 0 | Live test: device entry written by a script binds the surface | **done 2026-10-18**, `server/s1bridge/devices.py` |
 | 1 | `s1bridge.setup` + CLI (`setup`, `doctor`, `uninstall`), device entry, tests on temp dirs | **done 2026-10-18**: `server/s1bridge/setup.py`; sources still read from the checkout (no package data yet, an `.mcpb` can ship the checkout layout) |
 | 2 | MCP tools `bridge_setup`, `bridge_doctor`; version check in `daw_status` | **done 2026-10-18**: tools in `tools.py`; `daw_status` has `bridge_expected` / `bridge_installed` / `problem`, `daw_ping` a `warning`; setup output kept off the MCP stdout |
-| 3 | `.mcpb` manifest + build script; test on clean macOS user | double-click install works without terminal |
+| 3 | `.mcpb` manifest + build script; test on clean macOS user | **built 2026-10-18**: `packaging/build_mcpb.py` → `dist/*.mcpb`; unpacked bundle runs with `/usr/bin/python3` 3.9.6 and an empty environment (doctor, ping, setup dry run). Installed in Claude Desktop 2.42304.0 (open .mcpb → Install): extension `local.mcpb.kwansik.studio-one-ai-bridge`, 52 tools announced, server runs as `/usr/bin/python3 <ext>/server/run.py`; the installed copy answers `daw_ping` / `daw_list_tracks`. A Claude Desktop Chat conversation called `daw_ping` through the extension (pong, bridge results 13:34:30 and 13:36:22). Claude Desktop starts two server processes; only the first logs to `mcp-server-<name>.log`, so tool calls may not show there, check the mailbox outbox instead. Not yet: `mcpb validate`, clean macOS user without Command Line Tools |
 | 4 | README "Quick start" for non-developers (4 steps above); developer install moves below | |
 | 5 | Client adapters (Claude Code, Cursor, print) | |
 
