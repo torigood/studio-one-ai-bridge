@@ -357,9 +357,14 @@ def _launch_command():
 
 def _plist():
     import plistlib
+    # launchd starts the job with its own environment: keep the paths this server was started with
+    # (the Claude Desktop extension settings set S1BRIDGE_*), so the service uses the same data dir
+    env = {k: v for k, v in os.environ.items() if k.startswith("S1BRIDGE_")}
+    env["HOME"] = os.path.expanduser("~")
     return plistlib.dumps({
         "Label": LABEL,
         "ProgramArguments": _launch_command(),
+        "EnvironmentVariables": env,
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},  # restart after a crash or a dropped tunnel, not after a stop
         "ThrottleInterval": 30,

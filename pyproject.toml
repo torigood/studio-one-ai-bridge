@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "studio-one-ai-bridge"
-version = "0.5.0"
+version = "0.5.1"
 description = "MCP server that lets an AI read and operate Studio One 5 (unofficial)"
 readme = "README.md"
 license = { file = "LICENSE" }
