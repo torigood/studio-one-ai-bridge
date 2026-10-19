@@ -90,10 +90,14 @@ def _session(path):
         import onnxruntime as ort
         opts = ort.SessionOptions()
         opts.log_severity_level = 3
-        providers = ["CPUExecutionProvider"]
+        sess = None
         if "CoreMLExecutionProvider" in ort.get_available_providers():
-            providers.insert(0, ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram"}))
-        _sessions[path] = ort.InferenceSession(path, opts, providers=providers)
+            try:
+                sess = ort.InferenceSession(path, opts, providers=[
+                    ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram"}), "CPUExecutionProvider"])
+            except Exception:  # some graphs (Basic Pitch's CQT) do not convert to Core ML
+                sess = None
+        _sessions[path] = sess or ort.InferenceSession(path, opts, providers=["CPUExecutionProvider"])
     return _sessions[path]
 
 
@@ -121,6 +125,44 @@ def _crepe(capacity):
         return {"times": (np.arange(len(hz)) * CREPE_HOP / CREPE_SR).tolist(), "f0": hz.tolist(),
                 "confidence": conf.tolist()}
     return run
+
+
+# Basic Pitch (Spotify, Apache 2.0; models/NOTICE): a small polyphonic note model. Here it answers
+# "which notes sound at once", to find layered vocals (doubles, harmonies) the f0 trackers cannot see.
+BP_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "basic-pitch.onnx")
+BP_SR = 22050
+BP_HOP = 256
+BP_WINDOW = BP_SR * 2 - BP_HOP  # 43844 samples in, 172 frames out
+BP_OVERLAP = 30  # frames shared by neighbouring windows, half trimmed from each side
+BP_LOWEST = 21  # MIDI note of row 0 (A0), 88 rows
+
+
+def basic_pitch(samples, sr):
+    """{"times": frame times (s), "notes": (frames, 88) note activations 0..1, "onsets": same shape}."""
+    x = _resample(samples, sr, BP_SR)
+    overlap = BP_OVERLAP * BP_HOP
+    hop = BP_WINDOW - overlap
+    x = np.concatenate([np.zeros(overlap // 2, dtype=np.float32), x])
+    starts = list(range(0, len(x), hop)) or [0]
+    wins = np.zeros((len(starts), BP_WINDOW, 1), dtype=np.float32)
+    for i, a in enumerate(starts):
+        chunk = x[a:a + BP_WINDOW]
+        wins[i, :len(chunk), 0] = chunk
+    sess = _session(BP_MODEL)
+    outs = [sess.run(["StatefulPartitionedCall:1", "StatefulPartitionedCall:2"],
+                     {"serving_default_input_2:0": wins[i:i + 16]}) for i in range(0, len(wins), 16)]
+    trim = BP_OVERLAP // 2
+
+    def unwrap(k):
+        out = np.concatenate([o[k] for o in outs])[:, trim:-trim, :]
+        return out.reshape(-1, out.shape[2])
+    notes, onsets = unwrap(0), unwrap(1)
+    # windows advance `hop` samples but keep 142 frames (142 * 256 > hop): time each frame from its
+    # own window, or the frames drift ~8 ms per window. The padding equals the trimmed frames.
+    kept = notes.shape[0] // len(starts)
+    times = (np.repeat(np.arange(len(starts)) * hop, kept) + np.tile(np.arange(kept) * BP_HOP, len(starts))) / BP_SR
+    keep = times < len(samples) / sr
+    return {"times": times[keep], "notes": notes[keep], "onsets": onsets[keep]}
 
 
 BUILTIN = [

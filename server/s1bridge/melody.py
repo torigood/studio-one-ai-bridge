@@ -11,6 +11,10 @@ f0 engines give a pitch per 10 ms frame; notes() cuts that into notes:
   pitch      median of the raw frames, rounded; cents = how far the singer was from it
 "unsure" lists stretches that are loud but have no confident pitch (breath, noise, chords),
 worth checking by ear or in Melodyne.
+
+Layered vocals (doubles, harmonies): layers() checks each note against Basic Pitch's polyphonic
+activations, moves it to the octave that sounds loudest, lists the other pitches sounding with it
+("also") and returns "layered" spans where two or more voices sound at once.
 """
 import json
 import os
@@ -135,7 +139,52 @@ def notes(times, f0, conf, db):
     return out, unsure
 
 
-def analyze(path, start_sec=0.0, length_sec=None, engine="crepe"):
+OCTAVE_WIN = 1.0   # move a note when its other octave sounds louder in Basic Pitch ...
+OCTAVE_MIN = 0.3   # ... and clearly sounds at all
+VOICE_MIN = 0.25  # mean activation over a note for another pitch to count as a second voice
+LAYER_MIN = 0.15  # s
+
+
+def layers(found, bp, octave_win=OCTAVE_WIN, octave_min=OCTAVE_MIN, voice_min=VOICE_MIN):
+    """Use Basic Pitch's polyphonic activations to (1) put each note in the octave the recording
+    sounds loudest in (an f0 tracker follows a quieter double an octave below/above), (2) list
+    other pitches sounding with it ("also"), (3) return the spans where two or more voices sound."""
+    t, act = np.asarray(bp["times"]), np.asarray(bp["notes"])
+    if not len(t):
+        return found, []
+    lowest = engines.BP_LOWEST
+    for n in found:
+        rows = act[(t >= n["start"]) & (t < n["end"])]
+        if not len(rows):
+            continue
+        mean = rows.mean(axis=0)
+        row = n["pitch"] - lowest
+        if not 0 <= row < mean.size:
+            continue
+        own = mean[row]
+        best = max((r for r in (row - 12, row + 12) if 0 <= r < mean.size), key=lambda r: mean[r])
+        if mean[best] > max(octave_win * own, octave_min):
+            n["octave_from"] = n["pitch"]
+            n["pitch"] += best - row
+            row = best
+        peaks = [r for r in range(mean.size) if mean[r] >= voice_min and abs(r - row) > 1
+                 and mean[r] >= mean[max(r - 1, 0)] and mean[r] >= mean[min(r + 1, mean.size - 1)]]
+        if peaks:
+            n["also"] = [r + lowest for r in peaks]
+    # frames with two or more separate peaks over voice_min
+    on = act >= voice_min
+    peak = on & (act >= np.roll(act, 1, axis=1)) & (act >= np.roll(act, -1, axis=1))
+    multi = peak.sum(axis=1) >= 2
+    spans = []
+    d = np.diff(np.concatenate([[0], multi.astype(int), [0]]))
+    hop = t[1] - t[0] if len(t) > 1 else 0.0116
+    for i, j in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)):
+        if (j - i) * hop >= LAYER_MIN:
+            spans.append([round(float(t[i]), 2), round(float(t[j - 1] + hop), 2)])
+    return found, spans
+
+
+def analyze(path, start_sec=0.0, length_sec=None, engine="crepe", voices=True):
     x, sr = read_wav(path, start_sec, length_sec)
     eng = engines.load().get(engine)
     if eng is None:
@@ -145,11 +194,14 @@ def analyze(path, start_sec=0.0, length_sec=None, engine="crepe"):
     else:
         r = eng["run"](x, sr)
         found, unsure = notes(r["times"], r["f0"], r["confidence"], _frame_db(x, sr, r["times"]))
+    layered = []
+    if voices:
+        found, layered = layers(found, engines.basic_pitch(x, sr))
     for n in found:
         n["start"] = round(n["start"] + start_sec, 3)
         n["end"] = round(n["end"] + start_sec, 3)
-    unsure = [[a + start_sec, b + start_sec] for a, b in unsure]
-    return {"engine": engine, "notes": found, "unsure": unsure}
+    shift = lambda spans: [[a + start_sec, b + start_sec] for a, b in spans]
+    return {"engine": engine, "notes": found, "unsure": shift(unsure), "layered": shift(layered)}
 
 
 if __name__ == "__main__":
@@ -158,5 +210,6 @@ if __name__ == "__main__":
     os.dup2(2, 1)
     a = sys.argv[1:]
     length = None if len(a) < 3 or a[2] == "-" else float(a[2])
-    res = analyze(a[0], float(a[1]) if len(a) > 1 else 0.0, length, a[3] if len(a) > 3 else "crepe")
+    res = analyze(a[0], float(a[1]) if len(a) > 1 else 0.0, length, a[3] if len(a) > 3 else "crepe",
+                  voices=not (len(a) > 4 and a[4] == "novoices"))
     os.write(out, json.dumps(res).encode() + b"\n")

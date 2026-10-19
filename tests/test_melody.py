@@ -164,6 +164,36 @@ class SegmentationTests(unittest.TestCase):
         self.assertAlmostEqual(hz[0], 10 * 2 ** ((1997.3794084376191 + 2000) / 1200), delta=0.5)
 
 
+@unittest.skipIf(np is None, "needs numpy")
+class LayerTests(unittest.TestCase):
+    """layers() on made-up Basic Pitch activations (frames every 10 ms, row = MIDI - 21)."""
+
+    def bp(self, rows, seconds=1.0):
+        t = np.arange(int(seconds * 100)) * 0.01
+        act = np.zeros((len(t), 88))
+        for pitch, level in rows.items():
+            act[:, pitch - 21] = level
+        return {"times": t, "notes": act}
+
+    def test_note_moves_to_louder_octave_and_lists_the_double(self):
+        from s1bridge import melody
+        found, spans = melody.layers([{"start": 0.1, "end": 0.9, "pitch": 64}], self.bp({64: 0.3, 76: 0.6}))
+        self.assertEqual((found[0]["pitch"], found[0]["octave_from"], found[0]["also"]), (76, 64, [64]))
+        self.assertEqual(spans, [[0.0, 1.0]])
+
+    def test_single_voice_is_left_alone(self):
+        from s1bridge import melody
+        found, spans = melody.layers([{"start": 0.1, "end": 0.9, "pitch": 64}], self.bp({64: 0.7, 65: 0.3}))
+        self.assertEqual(found[0]["pitch"], 64)
+        self.assertNotIn("also", found[0])  # a neighbouring semitone is smear, not a voice
+        self.assertEqual(spans, [])
+
+    def test_harmony_is_reported(self):
+        from s1bridge import melody
+        found, _ = melody.layers([{"start": 0.1, "end": 0.9, "pitch": 64}], self.bp({64: 0.6, 67: 0.4}))
+        self.assertEqual((found[0]["pitch"], found[0]["also"]), (64, [67]))
+
+
 @unittest.skipIf(np is None or not os.path.isfile(tools.ANALYSIS_PYTHON) or
                  not os.path.isfile(os.path.join(tools.config.ANALYSIS_DIR, "models", "crepe-full.onnx")),
                  "needs the analysis pack (studio-one-ai-bridge analysis-setup)")
@@ -182,6 +212,21 @@ class CrepeEndToEndTests(unittest.TestCase):
         for n, (start, _) in zip(r["notes"], truth):
             self.assertAlmostEqual(n["start"], start, delta=0.03)
             self.assertLess(abs(n["cents"]), 30)
+        self.assertEqual(r["layered"], [])
+
+    def test_basic_pitch_finds_a_second_voice_in_time(self):
+        a, _ = sung([(None, 3.0), (64, 2.0)])  # the second voice enters 3 s in, past the first window
+        b, _ = sung([(None, 3.0), (71, 2.0)])
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "two.wav")
+            write_wav(path, a + b, 44100)
+            r = tools._run_analysis("melody", [path, 0, "-", "crepe"])
+        finally:
+            shutil.rmtree(d)
+        self.assertTrue(r["layered"], r)
+        self.assertAlmostEqual(r["layered"][0][0], 3.0, delta=0.15)
+        self.assertTrue(all(n.get("also") for n in r["notes"]), r["notes"])
 
 
 if __name__ == "__main__":

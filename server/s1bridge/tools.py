@@ -204,7 +204,9 @@ TOOLS = [
     {"name": "audio_melody",
      "description": "Melody notes of a single voice or instrument in audio (neural pitch tracker): bar, pos (beat in "
                     "bar), beat, len, note, conf; cents = how far off pitch it was sung; 'unsure' = loud spans with "
-                    "no clear pitch (check by ear). Give song + track (an audio track: positions follow the song) or "
+                    "no clear pitch (check by ear); 'layered' = spans where two or more voices sound (doubles, "
+                    "harmonies), 'also' = other pitches under a note, 'octave_from' = moved to the louder octave. "
+                    "Give song + track (an audio track: positions follow the song) or "
                     "path (a WAV; with song + start_beat it is placed there, else positions are seconds). from_bar/"
                     "to_bar limit the range (faster). grid: quarter notes, default 0.25, 0 = unquantized. to_track: "
                     "write the notes as a new part on that instrument track (live). Needs the analysis pack.",
@@ -549,19 +551,46 @@ def _audio_analyze(path, start=0, length=None):
     return json.loads(r.stdout)
 
 
+def _analysis_cache_key(module, args):
+    """Same file (path, size, mtime), same arguments, same analysis code -> same result."""
+    import hashlib
+    h = hashlib.sha1(json.dumps([module, [str(x) for x in args]]).encode())
+    if args and os.path.isfile(str(args[0])):
+        st = os.stat(str(args[0]))
+        h.update(("%d %d" % (st.st_size, st.st_mtime_ns)).encode())
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in sorted(glob.glob(os.path.join(here, "*.py")) + glob.glob(os.path.join(config.ENGINES_DIR, "*.py"))):
+        h.update(("%s %d" % (f, os.stat(f).st_mtime_ns)).encode())
+    return os.path.join(config.ANALYSIS_DIR, "cache", h.hexdigest() + ".json")
+
+
 def _run_analysis(module, args, timeout=900):
-    """Run an analysis module in the analysis pack's Python; its JSON result."""
+    """Run an analysis module in the analysis pack's Python at low priority (Studio One keeps the CPU);
+    its JSON result, cached per file and arguments."""
     if not os.path.exists(ANALYSIS_PYTHON):
         raise ToolError("analysis Python not found: %s (run: studio-one-ai-bridge analysis-setup)" % ANALYSIS_PYTHON)
+    cache = _analysis_cache_key(module, args)
+    if os.path.isfile(cache):
+        with open(cache) as f:
+            return json.load(f)
     r = subprocess.run([ANALYSIS_PYTHON, "-m", "s1bridge." + module] + [str(x) for x in args], cwd=PACKAGE_PARENT,
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, timeout=timeout,
+                       preexec_fn=(lambda: os.nice(10)) if hasattr(os, "nice") else None)
     if r.returncode != 0:
         err = r.stderr.strip()
         if "ModuleNotFoundError" in err or "model missing" in err:
             raise ToolError("the analysis pack is not installed: run `studio-one-ai-bridge analysis-setup` "
                             "(%s)" % err.splitlines()[-1])
         raise ToolError("analysis failed: %s" % err[-500:])
-    return json.loads(r.stdout.strip().splitlines()[-1])
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    try:
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache + ".part", "w") as f:
+            json.dump(out, f)
+        os.replace(cache + ".part", cache)
+    except OSError:
+        pass
+    return out
 
 
 def _audio_sources(song, tracks, tempo, ref):
@@ -612,7 +641,7 @@ def _audio_melody(a, wait):
         if a.get("to_bar"):
             hi = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a["to_bar"] + 1))
     engine = a.get("engine") or "crepe"
-    found, unsure = [], []
+    found, unsure, layered = [], [], []
     for wav, at, file_at, length in sources:
         s0 = at if lo is None else max(at, lo)
         s1 = (at + length if length is not None else None)
@@ -624,24 +653,35 @@ def _audio_melody(a, wait):
         for n in r["notes"]:
             found.append(dict(n, start=at + n["start"] - file_at, end=at + n["end"] - file_at))
         unsure.extend([at + x - file_at, at + y - file_at] for x, y in r["unsure"])
+        layered.extend([at + x - file_at, at + y - file_at] for x, y in r.get("layered", []))
     if not timed:
-        return {"engine": engine, "unit": "seconds", "notes": found, "unsure": unsure}
+        return {"engine": engine, "unit": "seconds", "notes": found, "unsure": unsure, "layered": layered}
     beat = lambda sec: notegrid.sec_to_beat(tempo, sec)
     notes = [{"beat": beat(n["start"]), "len": beat(n["end"]) - beat(n["start"]), "pitch": n["pitch"],
-              "cents": n["cents"], "conf": n["confidence"]} for n in found]
+              "cents": n["cents"], "conf": n["confidence"], "also": n.get("also"),
+              "octave_from": n.get("octave_from")} for n in found]
     grid = a.get("grid", 0.25)
     notes = notegrid.quantize(notes, grid)
     for n in notes:
         bar, pos = notegrid.bar_pos(sigs, n["beat"])
         n.update(bar=bar, pos=round(pos, 3), beat=round(n["beat"], 3), len=round(n["len"], 3),
                  note=notegrid.note_name(n["pitch"]))
-    spans = []
-    for x, y in unsure:
-        bar, pos = notegrid.bar_pos(sigs, beat(x))
-        spans.append({"bar": bar, "pos": round(pos, 2), "len": round(beat(y) - beat(x), 2)})
-    out = {"engine": engine, "grid": grid, "count": len(notes),
-           "notes": [{k: n[k] for k in ("bar", "pos", "beat", "len", "note", "pitch", "cents", "conf")} for n in notes],
-           "unsure": spans}
+    def bar_spans(spans):
+        out = []
+        for x, y in spans:
+            bar, pos = notegrid.bar_pos(sigs, beat(x))
+            out.append({"bar": bar, "pos": round(pos, 2), "len": round(beat(y) - beat(x), 2)})
+        return out
+
+    def brief(n):
+        d = {k: n[k] for k in ("bar", "pos", "beat", "len", "note", "pitch", "cents", "conf")}
+        if n["also"]:
+            d["also"] = [notegrid.note_name(p) for p in n["also"]]
+        if n["octave_from"] is not None:
+            d["octave_from"] = notegrid.note_name(n["octave_from"])
+        return d
+    out = {"engine": engine, "grid": grid, "count": len(notes), "notes": [brief(n) for n in notes],
+           "unsure": bar_spans(unsure), "layered": bar_spans(layered)}
     if a.get("to_track") is not None and notes:
         first = notegrid.bar_start(sigs, notes[0]["bar"])
         end = notegrid.bar_start(sigs, notegrid.bar_pos(sigs, notes[-1]["beat"] + notes[-1]["len"] - 1e-6)[0] + 1)

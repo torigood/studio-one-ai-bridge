@@ -268,6 +268,12 @@ onnxruntime, plus the CREPE models, ~90 MB) outside the app folder, so updates k
 models yourself instead of downloading them: `python tools/export_crepe_onnx.py DIR` (needs torch and
 torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
 
+Layered vocals (doubles, harmonies) are checked with Spotify's Basic Pitch model (Apache 2.0, shipped in
+`server/s1bridge/models/` with its NOTICE): each note moves to the octave that sounds loudest, other
+pitches under it are listed as `also`, and `layered` lists the spans with two or more voices, where a
+single-line result deserves a listen. Analysis runs at low CPU priority so playback keeps going, and
+results are cached per file and range in `analysis/cache/`.
+
 Private engines: a `.py` file in `analysis/engines/` (or `S1BRIDGE_ENGINES_DIR`) that defines
 `ENGINES = [{"name", "task": "f0" | "notes", "run": fn}]` adds engines for `audio_melody`'s `engine`
 argument (see `server/s1bridge/engines.py`). They stay on your Mac, so they can use models whose

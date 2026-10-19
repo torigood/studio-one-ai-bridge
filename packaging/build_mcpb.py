@@ -40,6 +40,7 @@ INCLUDE = [
     ("server/run.py", None),
     ("server/midi_port.py", None),
     ("server/s1bridge", lambda n: n.endswith(".py")),
+    ("server/s1bridge/models", lambda n: not n.startswith(".")),
     ("bridge/src", lambda n: not n.startswith(".")),
     ("surface", lambda n: not n.startswith(".")),
     ("re/tools", lambda n: n.endswith(".py")),

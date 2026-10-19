@@ -199,6 +199,9 @@ MIDI 트리거가 없으면 실시간 요청마다 **트랙 → AI Bridge - Run 
   `studio-one-ai-bridge analysis-setup`. CREPE 신경망 음정 추적(MIT)을 ONNX Runtime으로 돌립니다
   (Apple Silicon은 Core ML, 오디오 1초당 약 0.3초). 설치 위치는
   `~/Library/Application Support/studio-one-ai-bridge/analysis/`(약 90 MB)로 앱 폴더 밖이라 업데이트해도 유지됩니다.
+  겹친 보컬(더블링·화음)은 Spotify Basic Pitch 모델(Apache 2.0, `server/s1bridge/models/`에 NOTICE와 포함)로 확인해서,
+  더 크게 들리는 옥타브로 노트를 옮기고(`octave_from`), 같이 울리는 음은 `also`, 두 성부 이상 겹친 구간은 `layered`로 표시합니다.
+  분석은 낮은 CPU 우선순위로 돌아 재생을 방해하지 않고, 결과는 파일·구간별로 `analysis/cache/`에 캐시됩니다.
   개인 엔진: `analysis/engines/`에 `ENGINES = [...]`를 정의한 `.py`를 넣으면 `engine` 인자로 쓸 수 있고,
   레포에 들어가지 않으므로 재배포가 안 되는 라이선스의 모델도 쓸 수 있습니다.
 - VST3 파라미터 이름은 `tools/vst3dump/`를 빌드하면 읽을 수 있습니다.
