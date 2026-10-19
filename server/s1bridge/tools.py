@@ -76,6 +76,7 @@ _I = {"type": "integer"}
 _SONG = {"type": "string"}
 _TRACK = {"type": ["string", "integer"]}
 _WAIT = {"type": "number"}
+_QUALITY = {"type": "string", "enum": ["best", "fast"]}
 
 TOOLS = [
     # ---- offline -----------------------------------------------------------
@@ -211,9 +212,12 @@ TOOLS = [
                     "Give song + track (an audio track: positions follow the song) or "
                     "path (a WAV; with song + start_beat it is placed there, else positions are seconds). from_bar/"
                     "to_bar limit the range (faster). grid: quarter notes, default 0.25, 0 = unquantized. to_track: "
-                    "write the notes as a new part on that instrument track (live). Needs the analysis pack.",
+                    "write the notes as a new part on that instrument track (live). quality: best (default, "
+                    "CREPE full) or fast (CREPE tiny: ~10x faster, slightly less accurate). Needs the analysis "
+                    "pack.",
      "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
-                             "to_bar": _I, "grid": _N, "engine": _S, "to_track": _TRACK, "wait": _WAIT})},
+                             "to_bar": _I, "grid": _N, "quality": _QUALITY, "engine": _S, "to_track": _TRACK,
+                             "wait": _WAIT})},
     {"name": "song_check_clashes",
      "description": "Arrangement check of a saved song against the vocal and the Chord Track: vocal_clash (part a "
                     "minor 2nd/9th or major 7th from the vocal), part_clash (two parts a minor 2nd/9th apart), "
@@ -221,10 +225,10 @@ TOOLS = [
                     "the vocal), lockstep (4+ parts with the same rhythm). vocal: an audio track (analysed like "
                     "audio_melody, layered voices included) or an instrument track holding the melody. tracks/"
                     "exclude: names to check or skip (default: all instrument tracks except unpitched percussion). "
-                    "Reads the saved file: save first.",
+                    "quality: as audio_melody. Reads the saved file: save first.",
      "inputSchema": _schema({"path": _SONG, "vocal": _TRACK, "from_bar": _I, "to_bar": _I,
                              "tracks": {"type": "array", "items": _S}, "exclude": {"type": "array", "items": _S},
-                             "limit": _I}, ["path"])},
+                             "quality": _QUALITY, "limit": _I}, ["path"])},
     {"name": "song_analyze",
      "description": "Musical overview for arranging: tempo, time signature, key from all notes, per-track range and key, "
                     "audio analysis of audio tracks (first 120 s of up to 6 files).",
@@ -627,6 +631,9 @@ def _audio_sources(song, tracks, tempo, ref):
     return out
 
 
+QUALITY_ENGINES = {"best": "crepe", "fast": "crepe-tiny"}
+
+
 def _audio_melody(a, wait):
     song = _song_path(a["song"]) if a.get("song") else None
     tempo, sigs, tracks = [], [], []
@@ -653,7 +660,9 @@ def _audio_melody(a, wait):
         lo = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a.get("from_bar") or 1))
         if a.get("to_bar"):
             hi = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a["to_bar"] + 1))
-    engine = a.get("engine") or "crepe"
+    engine = a.get("engine") or QUALITY_ENGINES.get(a.get("quality") or "best")
+    if engine is None:
+        raise ToolError("quality must be best or fast")
     found, unsure, layered = [], [], []
     for wav, at, file_at, length in sources:
         s0 = at if lo is None else max(at, lo)
@@ -720,7 +729,7 @@ def _check_clashes(song, a):
         t = _find_track(tracks, vocal_name)
         if t["mediaType"] == "Audio":
             r = _audio_melody({"song": song, "track": vocal_name, "from_bar": a.get("from_bar"),
-                               "to_bar": a.get("to_bar"), "grid": 0}, 10)
+                               "to_bar": a.get("to_bar"), "grid": 0, "quality": a.get("quality")}, 10)
             for n in r["notes"]:
                 vocal.append({"beat": n["beat"], "len": n["len"], "pitch": n["pitch"]})
                 vocal.extend({"beat": n["beat"], "len": n["len"], "pitch": notegrid.note_number(x), "layer": True}

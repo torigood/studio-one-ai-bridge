@@ -120,6 +120,20 @@ class SongPlacementTests(unittest.TestCase):
         n = r["notes"][0]
         self.assertEqual((n["bar"], n["pos"], n["len"], n["note"]), (7, 3.0, 1.0, "E4"))
 
+    def test_quality_picks_the_engine(self):
+        used = []
+
+        def fake(module, args, timeout=900):
+            used.append(args[3])
+            return {"notes": [], "unsure": []}
+
+        with mock.patch.object(tools, "_run_analysis", fake):
+            for q in (None, "best", "fast"):
+                tools._audio_melody({"song": self.song, "track": "Vox", "quality": q}, 1)
+            with self.assertRaises(tools.ToolError):
+                tools._audio_melody({"song": self.song, "track": "Vox", "quality": "max"}, 1)
+        self.assertEqual(used, ["crepe", "crepe", "crepe-tiny"])
+
 
 @unittest.skipIf(np is None, "needs numpy")
 class SegmentationTests(unittest.TestCase):

@@ -268,6 +268,10 @@ onnxruntime, plus the CREPE models, ~90 MB) outside the app folder, so updates k
 models yourself instead of downloading them: `python tools/export_crepe_onnx.py DIR` (needs torch and
 torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
 
+`quality: "fast"` uses CREPE tiny (about 10x faster, a little less accurate); the default `best` uses
+CREPE full. Measured on an M4 for 75 s of vocal: best 25 s, fast 2.3 s, 0.6-0.9 GB of memory while it
+runs; CREPE runs on the GPU/Neural Engine, so the CPU stays mostly free.
+
 Layered vocals (doubles, harmonies) are checked with Spotify's Basic Pitch model (Apache 2.0, shipped in
 `server/s1bridge/models/` with its NOTICE): each note moves to the octave that sounds loudest, other
 pitches under it are listed as `also`, and `layered` lists the spans with two or more voices, where a
