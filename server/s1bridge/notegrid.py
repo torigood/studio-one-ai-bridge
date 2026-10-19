@@ -12,6 +12,12 @@ def note_name(pitch):
     return "%s%d" % (NAMES[pitch % 12], pitch // 12 - 1)
 
 
+def note_number(name):
+    """'C#4' -> 61 (note_name's inverse)."""
+    i = 2 if len(name) > 1 and name[1] == "#" else 1
+    return NAMES.index(name[:i]) + 12 * (int(name[i:]) + 1)
+
+
 def _segments(tempo):
     segs = sorted((t for t in tempo if t.get("bpm")), key=lambda t: t["start_beats"]) or [
         {"start_beats": 0.0, "bpm": 120.0}]

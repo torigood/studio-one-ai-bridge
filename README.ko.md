@@ -227,6 +227,7 @@ python3 server/run.py uninstall --apply
 | `song_write_cc` | 저장된 곡의 파트에 MIDI CC(모듈레이션, 익스프레션 등) 쓰기. 열려 있으면 자동 저장·닫기·다시 열기, 원본은 먼저 백업 |
 | `song_add_loop` | Sound Set `.audioloop`를 오디오 트랙에 원하는 길이로 반복 배치. 루프 길이 색인 필요 |
 | `audio_analyze` | WAV 파일의 레벨, 스펙트럼 균형, 템포·키 추정 (numpy) |
+| `song_check_clashes` | 보컬·코드 트랙 기준 편곡 검사: 보컬이나 파트끼리의 반음·단9도 충돌, 코드 밖 지속음(어보이드 노트), 보컬 음역을 가리는 파트, 같은 리듬만 치는 파트. 보컬은 오디오 트랙(`audio_melody`로 분석) 또는 멜로디 트랙 |
 | `audio_melody` | 오디오의 보컬·솔로 라인을 곡 마디 위 노트로 추출, 인스트루먼트 트랙에 기록 가능 (분석 팩) |
 | `library_instruments`, `library_effects` | 설치된 플러그인과 클래스 ID |
 | `library_plugin_params` | PreSonus 기본 플러그인의 파라미터 ID (프리셋에서) |

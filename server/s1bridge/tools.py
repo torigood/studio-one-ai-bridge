@@ -7,6 +7,7 @@ Two groups:
 import contextlib
 import glob
 import json
+import re
 import os
 import sys
 
@@ -25,6 +26,7 @@ from . import clients
 from . import automation
 from . import presets
 from . import notegrid
+from . import clashes
 import time
 from .keys import key_from_notes
 import subprocess
@@ -212,6 +214,17 @@ TOOLS = [
                     "write the notes as a new part on that instrument track (live). Needs the analysis pack.",
      "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
                              "to_bar": _I, "grid": _N, "engine": _S, "to_track": _TRACK, "wait": _WAIT})},
+    {"name": "song_check_clashes",
+     "description": "Arrangement check of a saved song against the vocal and the Chord Track: vocal_clash (part a "
+                    "minor 2nd/9th or major 7th from the vocal), part_clash (two parts a minor 2nd/9th apart), "
+                    "off_chord (held note outside the chord; avoid notes), crowding (part within 3 semitones of "
+                    "the vocal), lockstep (4+ parts with the same rhythm). vocal: an audio track (analysed like "
+                    "audio_melody, layered voices included) or an instrument track holding the melody. tracks/"
+                    "exclude: names to check or skip (default: all instrument tracks except unpitched percussion). "
+                    "Reads the saved file: save first.",
+     "inputSchema": _schema({"path": _SONG, "vocal": _TRACK, "from_bar": _I, "to_bar": _I,
+                             "tracks": {"type": "array", "items": _S}, "exclude": {"type": "array", "items": _S},
+                             "limit": _I}, ["path"])},
     {"name": "song_analyze",
      "description": "Musical overview for arranging: tempo, time signature, key from all notes, per-track range and key, "
                     "audio analysis of audio tracks (first 120 s of up to 6 files).",
@@ -689,6 +702,54 @@ def _audio_melody(a, wait):
             "track": a["to_track"], "start_beats": first, "length_beats": end - first,
             "notes": [{"pitch": n["pitch"], "start_beats": n["beat"] - first, "length_beats": n["len"],
                        "velocity": 0.8} for n in notes]}, wait)
+    return out
+
+
+# unpitched or effect parts whose notes are sample triggers, not pitches (skipped unless listed in tracks)
+UNPITCHED = re.compile(r"drum|perc|kit|snare|kick|hat|cymbal|sleigh|bell tree|shaker|tambourine|clap|gliss|fx|sfx",
+                       re.I)
+
+
+def _check_clashes(song, a):
+    with Song(song) as s:
+        tracks, sigs, chord_list = s.tracks(include_notes=True), s.time_signatures(), s.chords()
+    lo = notegrid.bar_start(sigs, a["from_bar"]) if a.get("from_bar") else None
+    hi = notegrid.bar_start(sigs, a["to_bar"] + 1) if a.get("to_bar") else None
+    vocal, vocal_name = [], a.get("vocal")
+    if vocal_name is not None:
+        t = _find_track(tracks, vocal_name)
+        if t["mediaType"] == "Audio":
+            r = _audio_melody({"song": song, "track": vocal_name, "from_bar": a.get("from_bar"),
+                               "to_bar": a.get("to_bar"), "grid": 0}, 10)
+            for n in r["notes"]:
+                vocal.append({"beat": n["beat"], "len": n["len"], "pitch": n["pitch"]})
+                vocal.extend({"beat": n["beat"], "len": n["len"], "pitch": notegrid.note_number(x), "layer": True}
+                             for x in n.get("also", []))
+        else:
+            vocal = [{"beat": n["start_beats"], "len": n["length_beats"] or 0, "pitch": n["pitch"]}
+                     for p in t["parts"] if not p["muted"] for n in p.get("notes", [])]
+        vocal_name = t["name"]
+    wanted, skip = a.get("tracks"), set(a.get("exclude") or [])
+    parts = {}
+    for t in tracks:
+        if t["mediaType"] != "Music" or t["name"] == vocal_name or t["name"] in skip or t["muted_track"]:
+            continue
+        if wanted is not None and t["name"] not in wanted:
+            continue
+        if wanted is None and UNPITCHED.search(t["name"]):
+            continue
+        notes = [{"beat": n["start_beats"], "len": n["length_beats"] or 0, "pitch": n["pitch"]}
+                 for p in t["parts"] if not p["muted"] for n in p.get("notes", [])
+                 if n["pitch"] is not None and n["pitch"] >= 21]  # below A0: keyswitches
+        if notes:
+            parts[t["name"]] = notes
+    issues = clashes.check(parts, vocal, chord_list, sigs, lo, hi)
+    limit = a.get("limit", 60)
+    out = {"checked": sorted(parts), "vocal": vocal_name, "chords": len(chord_list), "count": len(issues)}
+    out.update(clashes.summary(issues))
+    out["issues"] = issues[:limit]
+    if len(issues) > limit:
+        out["more"] = "%d more; narrow from_bar/to_bar or raise limit" % (len(issues) - limit)
     return out
 
 
@@ -1471,6 +1532,9 @@ def call(name, a):
 
     if name == "audio_melody":
         return _audio_melody(a, wait)
+
+    if name == "song_check_clashes":
+        return _check_clashes(_song_path(a["path"]), a)
 
     if name == "song_analyze":
         return _song_analyze(_song_path(a["path"]), a.get("audio", True))

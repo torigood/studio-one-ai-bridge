@@ -310,6 +310,7 @@ This removes the extension, the surface, its device entry and the catalog.
 | `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. If the song is open it is saved, closed and reopened automatically; the original is backed up first. |
 | `song_add_loop` | Place a Sound Set `.audioloop` on an audio track of a saved song, repeated to a length. Auto close/reopen like song_write_cc; backed up first. Needs the loop length index (below). |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
+| `song_check_clashes` | Arrangement check against the vocal and the Chord Track: semitone/minor-9th clashes with the vocal or between parts, held notes outside the chord (avoid notes), parts crowding the vocal's register, parts in lockstep rhythm. The vocal can be an audio track (analysed with `audio_melody`) or a melody track |
 | `audio_melody` | Notes of a vocal or solo line in audio, placed on the song's bars; can write them to an instrument track (analysis pack) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |

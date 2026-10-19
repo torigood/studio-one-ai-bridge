@@ -45,6 +45,24 @@ def gain_to_db(g):
     return round(20 * math.log10(g), 2) if g and g > 0 else float("-inf")
 
 
+def fifths_pc(f):
+    """Circle-of-fifths position (C=0, G=1, F=-1) -> pitch class."""
+    return (f * 7) % 12
+
+
+def fifths_name(f):
+    """6 -> 'F#', -2 -> 'Bb'."""
+    i = f + 1
+    return "FCGDAEB"[i % 7] + ("#" * (i // 7) if i >= 0 else "b" * (-(i // 7)))
+
+
+def chord_name(root, intervals, bass=None):
+    from .chords import QUALITIES
+    q = next((k for k, v in QUALITIES.items() if v == tuple(intervals)), None)
+    name = fifths_name(root) + (q if q is not None else "(%s)" % ",".join(map(str, intervals)))
+    return name + ("/" + fifths_name(bass) if bass is not None and bass != root else "")
+
+
 class Song:
     def __init__(self, path):
         self.path = path
@@ -159,6 +177,24 @@ class Song:
             out.append({"name": m.get("name"), "start_beats": _f(m.get("start")),
                         "type": m.get("markerType")})
         return out
+
+    def chords(self):
+        """Chord Track events: [{start_beats, length_beats, name, root, bass, pcs}], pitch classes 0 = C.
+        ChordEvent Attributes: root/bass on the circle of fifths, intervals = 12 flags above the root
+        (non-zero = in the chord; chords.py)."""
+        out = []
+        for ev in self.root.iter("ChordEvent"):
+            a = ev.find("Attributes")
+            if a is None or a.get("root") is None:
+                continue
+            root = int(_f(a.get("root")))
+            bass = int(_f(a.get("bass"), root))
+            flags = (a.get("intervals") or "").split()
+            ivs = tuple(i for i, v in enumerate(flags) if v not in ("0", ""))
+            out.append({"start_beats": _f(ev.get("start")), "length_beats": _f(ev.get("length")),
+                        "name": chord_name(root, ivs, bass), "root": fifths_pc(root), "bass": fifths_pc(bass),
+                        "pcs": sorted({(fifths_pc(root) + i) % 12 for i in ivs})})
+        return sorted(out, key=lambda c: c["start_beats"])
 
     def arranger_sections(self):
         out = []
