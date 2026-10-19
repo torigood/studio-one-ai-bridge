@@ -31,7 +31,7 @@ import tempfile
 import time
 import zipfile
 
-from . import config, devices
+from . import clients, config, devices
 
 EXT_ID = "local.s1aibridge"
 BRIDGE_SRC = os.path.join(config.PROJECT_ROOT, "bridge", "src")
@@ -309,7 +309,7 @@ def doctor(paths=None, ping=True, running=None, system=True):
     system=False leaves out the checks that start processes (MIDI daemon, numpy)."""
     paths = paths or Paths()
     running = running or studio_one_running
-    setup_fix = "quit Studio One, then run: python3 -m s1bridge setup --apply"
+    setup_fix = "quit Studio One, then run in Terminal: %s" % clients.command("setup", "--apply")
     out = []
 
     version = studio_one_version(paths)
@@ -347,7 +347,7 @@ def doctor(paths=None, ping=True, running=None, system=True):
             out.append(_check("MIDI port \"AI Bridge\"", True, midi.status()))
         except OSError as e:
             out.append(_check("MIDI port \"AI Bridge\"", False, str(e),
-                              "run: python3 server/midi_port.py status"))
+                              "run in Terminal: %s" % clients.command("doctor")))
     else:
         out.append(_check("MIDI port \"AI Bridge\"", False, "virtual MIDI port is macOS only",
                           "run 'AI Bridge - Run Jobs' in Studio One by hand for each request"))
@@ -371,7 +371,7 @@ def doctor(paths=None, ping=True, running=None, system=True):
         out.append(_check("bridge answers", None, "skipped (Studio One not running)" if ping else "skipped"))
 
     out.append(_check("command catalog", os.path.isfile(paths.catalog) or None, paths.catalog,
-                      "optional, for commands_search: python3 -m s1bridge setup --apply"))
+                      "optional, for commands_search: %s" % clients.command("setup", "--apply")))
     if not system:
         return out
     numpy = subprocess.run([config.analysis_python(), "-c", "import numpy"], capture_output=True).returncode == 0

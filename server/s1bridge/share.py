@@ -42,7 +42,7 @@ import threading
 import time
 import urllib.request
 
-from . import config
+from . import clients, config
 
 TOKEN_FILE = os.path.join(config.DATA_DIR, "share_token")
 SETTINGS_FILE = os.path.join(config.DATA_DIR, "share.json")
@@ -249,7 +249,7 @@ def start_cloudflare(port, log=print):
 def start_ngrok(port, domain, log=print):
     token = keychain_get("ngrok")
     if not token:
-        raise RuntimeError("no ngrok authtoken in the Keychain yet; run: python3 server/run.py share --set-ngrok-token")
+        raise RuntimeError("no ngrok authtoken in the Keychain yet; run: %s" % clients.command("share", "--set-ngrok-token"))
     env = dict(os.environ, NGROK_AUTHTOKEN=token)
     proc = subprocess.Popen([find_ngrok(log), "http", "127.0.0.1:%d" % port, "--url", "https://" + domain,
                              "--log", "stdout", "--log-format", "json"],
@@ -350,7 +350,6 @@ def run(settings, new_token=False, no_tunnel=False, service=False):
 # --- start at login (LaunchAgent) ----------------------------------------------------------
 
 def _launch_command():
-    from . import clients
     return clients.server_command() + ["share", "--service"]
 
 
@@ -474,13 +473,12 @@ def find_tunnel_client(log=print):
 
 def run_openai_tunnel(tunnel_id):
     """tunnel-client starts this server over stdio itself; no HTTP server or secret path."""
-    from . import clients
     key = keychain_get("openai-tunnel")
     if not key:
-        print("No OpenAI runtime key in the Keychain yet. Run: python3 server/run.py share --set-openai-key")
+        print("No OpenAI runtime key in the Keychain yet. Run: %s" % clients.command("share", "--set-openai-key"))
         return 1
     tc = find_tunnel_client()
-    command = " ".join("'%s'" % a.replace("'", "'\\''") for a in clients.server_command())
+    command = clients.command()
     r = subprocess.run([tc, "init", "--force", "--profile", "studio-one", "--profile-dir", TUNNEL_PROFILES,
                         "--tunnel-id", tunnel_id, "--health-listen-addr", "127.0.0.1:0", "--mcp-command", command],
                        capture_output=True, text=True)
@@ -572,7 +570,7 @@ def cli(argv):
         return 0
     if args.enable:
         if settings["provider"] == "ngrok" and not keychain_get("ngrok"):
-            print("store the ngrok authtoken first: python3 server/run.py share --set-ngrok-token")
+            print("store the ngrok authtoken first: %s" % clients.command("share", "--set-ngrok-token"))
             return 1
         try:
             enable()

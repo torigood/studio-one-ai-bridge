@@ -99,6 +99,16 @@ class ClientTests(unittest.TestCase):
             with mock.patch.object(clients.config, "PROJECT_ROOT", root):
                 self.assertEqual(clients.server_command(), ["/bin/sh", os.path.join(root, "bin", "start.sh")])
 
+    def test_command_runs_from_any_folder(self):
+        """Paths with spaces (e.g. "2. 코딩") come out quoted and absolute, so the line can be pasted as is."""
+        import shlex
+        root = "/Users/x/2. 코딩/studio-one-ai-bridge"
+        with mock.patch.object(clients.config, "PROJECT_ROOT", root), \
+                mock.patch.object(clients.sys, "executable", "/usr/bin/python3"):
+            cmd = clients.command("setup", "--apply")
+        self.assertEqual(shlex.split(cmd), ["/usr/bin/python3", root + "/server/run.py", "setup", "--apply"])
+        self.assertIn("'%s/server/run.py'" % root, cmd)
+
 
 if __name__ == "__main__":
     unittest.main()
