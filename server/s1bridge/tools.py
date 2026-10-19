@@ -133,8 +133,8 @@ def _commands_search(a):
     cat = a.get("category")
     catalog = _load_catalog()
     if "missing" in catalog:
-        raise ToolError("command catalog not found at %s. Generate it on this machine: "
-                        "python3 server/run.py setup --apply" % catalog["missing"])
+        raise ToolError("command catalog not found at %s. Generate it on this machine: %s"
+                        % (catalog["missing"], clients.command("setup", "--apply")))
     hits = [c for c in catalog["commands"]
             if (not cat or c["category"] == cat) and (q in c["name"].lower() or q in c["category"].lower())]
     return hits[: a.get("limit", 40)]
@@ -167,8 +167,8 @@ def _bridge_share(a):
     if a["action"] == "on":
         s = share.load_settings()
         if s["provider"] == "ngrok" and not share.keychain_get("ngrok"):
-            raise ToolError("ngrok is selected but its authtoken is not in the Keychain; the user runs "
-                            "'python3 server/run.py share --set-ngrok-token' in Terminal")
+            raise ToolError("ngrok is selected but its authtoken is not in the Keychain; the user runs this in "
+                            "Terminal: %s" % clients.command("share", "--set-ngrok-token"))
         try:
             share.enable()
         except RuntimeError as e:
@@ -220,8 +220,8 @@ def _daw_ping(a):
     r = live.bridge("ping", {}, a.get("wait"))
     want = setup.source_version()
     if isinstance(r, dict) and r.get("version") and r["version"] != want:
-        r["warning"] = ("Studio One runs bridge %s, this server expects %s. Ask the user to quit Studio One, "
-                        "call bridge_setup, then start Studio One again." % (r["version"], want))
+        fix = live.version_check({}).get("problem") or "Ask the user to restart Studio One."
+        r["warning"] = "Studio One runs bridge %s, this server expects %s. %s" % (r["version"], want, fix)
     return r
 
 

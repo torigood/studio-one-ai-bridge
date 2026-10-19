@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 
-from . import clashes, common, config, live, notegrid
+from . import clashes, clients, common, config, live, notegrid
 from .common import ToolError
 from .keys import key_from_notes
 from .song import Song
@@ -53,7 +53,8 @@ def run_analysis(module, args, timeout=900):
     """Run an analysis module in the analysis pack's Python at low priority (Studio One keeps the CPU);
     its JSON result, cached per file and arguments."""
     if not os.path.exists(ANALYSIS_PYTHON):
-        raise ToolError("analysis Python not found: %s (run: studio-one-ai-bridge analysis-setup)" % ANALYSIS_PYTHON)
+        raise ToolError("analysis Python not found: %s (the user runs this in Terminal: %s)"
+                        % (ANALYSIS_PYTHON, clients.command("analysis-setup")))
     cache = _analysis_cache_key(module, args)
     if os.path.isfile(cache):
         with open(cache) as f:
@@ -64,7 +65,8 @@ def run_analysis(module, args, timeout=900):
     if r.returncode != 0:
         err = r.stderr.strip()
         if "ModuleNotFoundError" in err or "model missing" in err:
-            raise ToolError("the analysis pack is not installed: run `studio-one-ai-bridge analysis-setup` "
+            raise ToolError("the analysis pack is not installed: the user runs this in Terminal: %s "
+                            % clients.command("analysis-setup") +
                             "(%s)" % err.splitlines()[-1])
         raise ToolError("analysis failed: %s" % err[-500:])
     out = json.loads(r.stdout.strip().splitlines()[-1])

@@ -17,6 +17,7 @@ server; ChatGPT subscribers can use Codex, which can.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,12 @@ def server_command():
     if python.startswith(("/Applications/Xcode.app/", "/Library/Developer/CommandLineTools/")):
         python = "/usr/bin/python3"  # the stable shim, not a path that moves with Xcode updates
     return [python, os.path.join(config.PROJECT_ROOT, "server", "run.py")]
+
+
+def command(*args):
+    """A Terminal command that runs this server's CLI with args, from any folder (absolute paths, quoted).
+    Error messages show it so a user, or an AI relaying it, can paste it as is."""
+    return shlex.join(server_command() + list(args))
 
 
 def entry(style, argv):

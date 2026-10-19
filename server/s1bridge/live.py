@@ -7,7 +7,7 @@ import subprocess
 import time
 import urllib.parse
 
-from . import config, midi, setup, songwrite
+from . import clients, config, midi, setup, songwrite
 from .common import ToolError
 from .mailbox import Mailbox
 from .song import Song
@@ -207,6 +207,10 @@ def instrument_channel_hint(track, wait=None):
     return None
 
 
+_INSTALL = ("Ask the user to save their song and quit Studio One, then call bridge_setup (from a chat app "
+            "without bridge_setup, such as ChatGPT: the user runs this in Terminal on the Mac: %s).")
+
+
 def version_check(status):
     """Compare the bridge this server ships, the one installed and the one Studio One last loaded."""
     paths = setup.Paths()
@@ -216,11 +220,10 @@ def version_check(status):
     loaded = status.get("version") if isinstance(status, dict) else None
     out = {"bridge_expected": want, "bridge_installed": installed}
     if installed is None:
-        out["problem"] = ("The bridge is not installed in Studio One. Ask the user to save their song and quit "
-                          "Studio One, then call bridge_setup.")
+        out["problem"] = "The bridge is not installed in Studio One. " + _INSTALL % clients.command("setup", "--apply")
     elif installed != want:
-        out["problem"] = ("Installed bridge %s is older than this server (%s). Ask the user to save their song and "
-                          "quit Studio One, then call bridge_setup." % (installed, want))
+        out["problem"] = ("Installed bridge %s is older than this server (%s). " % (installed, want) +
+                          _INSTALL % clients.command("setup", "--apply"))
     elif loaded and loaded != installed and isinstance(status, dict) and status.get("loaded"):
         out["problem"] = ("Studio One is still running bridge %s; %s is installed. Ask the user to restart "
                           "Studio One." % (loaded, installed))
