@@ -101,15 +101,18 @@ def _session(path):
     return _sessions[path]
 
 
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+
+
 def crepe_model_path(capacity="tiny"):
-    return os.path.join(config.ANALYSIS_DIR, "models", "crepe-%s.onnx" % capacity)
+    return os.path.join(MODELS_DIR, "crepe-%s.onnx" % capacity)
 
 
 def _crepe(capacity):
     def run(samples, sr):
         path = crepe_model_path(capacity)
         if not os.path.isfile(path):
-            raise RuntimeError("CREPE model missing: %s (run: studio-one-ai-bridge analysis-setup)" % path)
+            raise RuntimeError("CREPE model missing: %s (reinstall the bridge)" % path)
         frames, db = _crepe_frames(_resample(samples, sr, CREPE_SR))
         if not len(frames):
             return {"times": [], "f0": [], "confidence": []}
@@ -140,7 +143,7 @@ def _pyin(samples, sr):
 
 # Basic Pitch (Spotify, Apache 2.0; models/NOTICE): a small polyphonic note model. Here it answers
 # "which notes sound at once", to find layered vocals (doubles, harmonies) the f0 trackers cannot see.
-BP_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "basic-pitch.onnx")
+BP_MODEL = os.path.join(MODELS_DIR, "basic-pitch.onnx")
 BP_SR = 22050
 BP_HOP = 256
 BP_WINDOW = BP_SR * 2 - BP_HOP  # 43844 samples in, 172 frames out

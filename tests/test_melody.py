@@ -217,7 +217,7 @@ class LayerTests(unittest.TestCase):
 
 
 @unittest.skipIf(np is None or not os.path.isfile(tools.ANALYSIS_PYTHON) or
-                 not os.path.isfile(os.path.join(tools.config.ANALYSIS_DIR, "models", "crepe-tiny.onnx")),
+                 not os.path.isfile(os.path.join(ROOT, "server", "s1bridge", "models", "crepe-tiny.onnx")),
                  "needs the analysis pack (studio-one-ai-bridge analysis-setup)")
 class CrepeEndToEndTests(unittest.TestCase):
     def test_synthetic_melody(self):

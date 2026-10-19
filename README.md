@@ -267,9 +267,9 @@ studio-one-ai-bridge analysis-setup
 ```
 
 This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy,
-onnxruntime and librosa, about 420 MB, plus the 2 MB CREPE tiny model) outside the app folder, so updates
-keep it. To build the model yourself instead of downloading it: `python tools/export_crepe_onnx.py DIR`
-(needs torch and torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
+onnxruntime and librosa, about 420 MB) outside the app folder, so updates keep it. The two models
+(CREPE tiny 2 MB, Basic Pitch 0.2 MB) ship with the bridge in `server/s1bridge/models/` with their
+licenses; `tools/export_crepe_onnx.py` rebuilds the CREPE one from torchcrepe.
 
 Layered vocals (doubles, harmonies) are checked with Spotify's Basic Pitch model (Apache 2.0, shipped in
 `server/s1bridge/models/` with its NOTICE): each note moves to the octave that sounds loudest, other

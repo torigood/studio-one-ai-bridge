@@ -2,8 +2,7 @@
 """Export torchcrepe's CREPE tiny weights (MIT) to ONNX for the analysis pack, and check the export.
 
     pip install torch torchcrepe onnx onnxruntime
-    python tools/export_crepe_onnx.py OUT_DIR
-    studio-one-ai-bridge analysis-setup --model-dir OUT_DIR
+    python tools/export_crepe_onnx.py server/s1bridge/models
 
 Input "frames" (n, 1024): 16 kHz frames, each normalised to zero mean and unit std.
 Output "probs" (n, 360): pitch bin activations, 20 cents per bin from 1997.38 cents.
