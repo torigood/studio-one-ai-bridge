@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export torchcrepe's CREPE weights (MIT) to ONNX for the analysis pack, and check the export.
+"""Export torchcrepe's CREPE tiny weights (MIT) to ONNX for the analysis pack, and check the export.
 
     pip install torch torchcrepe onnx onnxruntime
     python tools/export_crepe_onnx.py OUT_DIR
@@ -19,7 +19,7 @@ import torchcrepe
 
 def main(out_dir):
     os.makedirs(out_dir, exist_ok=True)
-    for cap in ("tiny", "full"):
+    for cap in ("tiny",):
         model = torchcrepe.Crepe(cap)
         weights = os.path.join(os.path.dirname(torchcrepe.__file__), "assets", cap + ".pth")
         model.load_state_dict(torch.load(weights, map_location="cpu"))

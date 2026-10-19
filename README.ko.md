@@ -196,15 +196,13 @@ MIDI 트리거가 없으면 실시간 요청마다 **트랙 → AI Bridge - Run 
 - `song_add_loop`는 루프 길이 색인이 필요합니다 (`python3 -m s1bridge.loops fill/harvest`).
 - `audio_analyze`는 numpy가 필요합니다 (`python3 -m venv .venv && .venv/bin/pip install numpy`).
 - `audio_melody`(오디오의 보컬·솔로 라인을 곡 마디 위의 노트로 변환)는 분석 팩이 필요합니다:
-  `studio-one-ai-bridge analysis-setup`. CREPE 신경망 음정 추적(MIT)을 ONNX Runtime으로 돌립니다
-  (Apple Silicon은 Core ML, 오디오 1초당 약 0.3초). 설치 위치는
-  `~/Library/Application Support/studio-one-ai-bridge/analysis/`(약 90 MB)로 앱 폴더 밖이라 업데이트해도 유지됩니다.
+  `studio-one-ai-bridge analysis-setup`. 음정은 pYIN(librosa, ISC)으로 추적하고, 기본값에서는 모든 노트를
+  CREPE tiny 신경망(MIT)으로 교차 검증해서 두 엔진이 다르게 들은 노트에 `check`(다른 엔진이 들은 음)를 붙입니다.
+  직접 고친 K-pop 아카펠라 정답 기준 pYIN 80% 일치, 두 엔진이 같을 때 86%, 다를 때 35% 정답이라
+  `check` 표시가 확인할 노트를 정확히 가리킵니다. `quality: "fast"`는 교차 검증을 생략합니다(보컬 75초 기준 M4에서 약 6초).
+  설치 위치는 `~/Library/Application Support/studio-one-ai-bridge/analysis/`(약 420 MB)로 앱 폴더 밖이라 업데이트해도 유지됩니다.
   겹친 보컬(더블링·화음)은 Spotify Basic Pitch 모델(Apache 2.0, `server/s1bridge/models/`에 NOTICE와 포함)로 확인해서,
   더 크게 들리는 옥타브로 노트를 옮기고(`octave_from`), 같이 울리는 음은 `also`, 두 성부 이상 겹친 구간은 `layered`로 표시합니다.
-  `engine: "pyin"`은 신경망 없는 pYIN(librosa)을 씁니다. K-pop 아카펠라 테스트에서 직접 고친 정답과의 일치가
-  CREPE보다 약간 높았고(80% vs 77%) 약 3배 빨랐습니다.
-  `quality: "fast"`는 CREPE tiny(약 10배 빠름, 정확도 약간 낮음), 기본값 `best`는 CREPE full을 씁니다
-  (M4, 보컬 75초 기준 best 25초 / fast 2.3초, 실행 중 메모리 0.6~0.9 GB).
   분석은 낮은 CPU 우선순위로 돌아 재생을 방해하지 않고, 결과는 파일·구간별로 `analysis/cache/`에 캐시됩니다.
   개인 엔진: `analysis/engines/`에 `ENGINES = [...]`를 정의한 `.py`를 넣으면 `engine` 인자로 쓸 수 있고,
   레포에 들어가지 않으므로 재배포가 안 되는 라이선스의 모델도 쓸 수 있습니다.
@@ -231,7 +229,6 @@ python3 server/run.py uninstall --apply
 | `song_write_cc` | 저장된 곡의 파트에 MIDI CC(모듈레이션, 익스프레션 등) 쓰기. 열려 있으면 자동 저장·닫기·다시 열기, 원본은 먼저 백업 |
 | `song_add_loop` | Sound Set `.audioloop`를 오디오 트랙에 원하는 길이로 반복 배치. 루프 길이 색인 필요 |
 | `audio_analyze` | WAV 파일의 레벨, 스펙트럼 균형, 템포·키 추정 (numpy) |
-| `audio_chords` | 반주·믹스 오디오의 코드를 곡 마디 위에 박 단위로 인식, 키에 맞춘 표기, 코드 트랙에 기록 가능 (분석 팩) |
 | `song_check_clashes` | 보컬·코드 트랙 기준 편곡 검사: 보컬이나 파트끼리의 반음·단9도 충돌, 코드 밖 지속음(어보이드 노트), 보컬 음역을 가리는 파트, 같은 리듬만 치는 파트. 보컬은 오디오 트랙(`audio_melody`로 분석) 또는 멜로디 트랙 |
 | `audio_melody` | 오디오의 보컬·솔로 라인을 곡 마디 위 노트로 추출, 인스트루먼트 트랙에 기록 가능 (분석 팩) |
 | `library_instruments`, `library_effects` | 설치된 플러그인과 클래스 ID |

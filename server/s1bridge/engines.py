@@ -5,8 +5,6 @@ An engine is a dict {"name", "task", "run", "about"}:
                 (monophonic pitch track; melody.py turns it into notes)
   task "notes"  run(samples, sr) -> [{"start": s, "end": s, "pitch": midi, "confidence": 0..1}]
                 (an engine that already finds notes)
-  task "chords" run(samples, sr) -> [{"start": s, "end": s, "root": 0..11 | None, "quality", "bass"}]
-                (for audio_chords; quality as chords.QUALITIES)
 samples is mono float32 at sr Hz (any rate; resample inside the engine if it needs one).
 
 Built-in engines use permissively licensed models only. More engines are loaded from *.py files in
@@ -103,7 +101,7 @@ def _session(path):
     return _sessions[path]
 
 
-def crepe_model_path(capacity="full"):
+def crepe_model_path(capacity="tiny"):
     return os.path.join(config.ANALYSIS_DIR, "models", "crepe-%s.onnx" % capacity)
 
 
@@ -179,12 +177,10 @@ def basic_pitch(samples, sr):
 
 
 BUILTIN = [
-    {"name": "crepe", "task": "f0", "run": _crepe("full"),
-     "about": "CREPE full (MIT), neural monophonic pitch tracker, Viterbi-smoothed"},
-    {"name": "crepe-tiny", "task": "f0", "run": _crepe("tiny"),
-     "about": "CREPE tiny (MIT): ~40x faster, less accurate"},
     {"name": "pyin", "task": "f0", "run": _pyin,
-     "about": "pYIN (librosa, ISC): signal processing, no model; ~3x faster than CREPE full"},
+     "about": "pYIN (librosa, ISC): probabilistic YIN, no model; the default"},
+    {"name": "crepe-tiny", "task": "f0", "run": _crepe("tiny"),
+     "about": "CREPE tiny (MIT): neural pitch tracker, Viterbi-smoothed; the cross-check"},
 ]
 
 

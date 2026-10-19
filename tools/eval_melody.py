@@ -70,7 +70,7 @@ def main():
     ap.add_argument("--ref", required=True)
     ap.add_argument("--from-bar", type=int, default=1)
     ap.add_argument("--to-bar", type=int)
-    ap.add_argument("--engine", nargs="+", default=["crepe"])
+    ap.add_argument("--engine", nargs="+", default=["pyin", "crepe-tiny"])
     ap.add_argument("--grid", type=float, default=0.0)
     ap.add_argument("--by-bars", type=int, help="also score every N bars")
     ap.add_argument("--show", action="store_true", help="list reference vs estimate notes")

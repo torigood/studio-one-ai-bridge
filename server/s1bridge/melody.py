@@ -192,7 +192,7 @@ def layers(found, bp, octave_win=OCTAVE_WIN, octave_min=OCTAVE_MIN, voice_min=VO
     return found, spans
 
 
-def analyze(path, start_sec=0.0, length_sec=None, engine="crepe", voices=True):
+def analyze(path, start_sec=0.0, length_sec=None, engine="pyin", voices=True):
     x, sr = read_wav(path, start_sec, length_sec)
     eng = engines.load().get(engine)
     if eng is None:
@@ -218,6 +218,6 @@ if __name__ == "__main__":
     os.dup2(2, 1)
     a = sys.argv[1:]
     length = None if len(a) < 3 or a[2] == "-" else float(a[2])
-    res = analyze(a[0], float(a[1]) if len(a) > 1 else 0.0, length, a[3] if len(a) > 3 else "crepe",
+    res = analyze(a[0], float(a[1]) if len(a) > 1 else 0.0, length, a[3] if len(a) > 3 else "pyin",
                   voices=not (len(a) > 4 and a[4] == "novoices"))
     os.write(out, json.dumps(res).encode() + b"\n")

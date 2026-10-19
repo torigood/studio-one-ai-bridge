@@ -29,7 +29,7 @@ from . import presets
 from . import notegrid
 from . import clashes
 import time
-from .keys import estimate_key, key_from_notes
+from .keys import key_from_notes
 import subprocess
 import urllib.parse
 
@@ -213,23 +213,13 @@ TOOLS = [
                     "Give song + track (an audio track: positions follow the song) or "
                     "path (a WAV; with song + start_beat it is placed there, else positions are seconds). from_bar/"
                     "to_bar limit the range (faster). grid: quarter notes, default 0.25, 0 = unquantized. to_track: "
-                    "write the notes as a new part on that instrument track (live). quality: best (default, "
-                    "CREPE full) or fast (CREPE tiny: ~10x faster, slightly less accurate); engine=pyin is a "
-                    "model-free alternative that holds the octave better on doubled vocals. Needs the analysis "
-                    "pack.",
+                    "write the notes as a new part on that instrument track (live). quality: best (default: pYIN "
+                    "checked against the CREPE neural tracker; 'check' on a note = the second engine heard "
+                    "another pitch, wrong far more often, so verify those) or fast (pYIN alone). Needs the "
+                    "analysis pack.",
      "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
                              "to_bar": _I, "grid": _N, "quality": _QUALITY, "engine": _S, "to_track": _TRACK,
                              "wait": _WAIT})},
-    {"name": "audio_chords",
-     "description": "Chords of audio (an instrumental, a band or orchestra bounce), one decision per beat, merged into "
-                    "chord changes: bar, pos, beat, len, chord (spelled for the estimated key; slash chords when "
-                    "the bass is on another chord tone), conf. Basic Pitch note activations + chord templates + "
-                    "Viterbi smoothing. Give song + track (an audio track) or song + path + start_beat. from_bar/"
-                    "to_bar limit the range. to_chord_track=true writes the result into the Chord Track (replacing "
-                    "chords in that range; the song is saved, closed and reopened if open; backed up first). "
-                    "Needs the analysis pack.",
-     "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
-                             "to_bar": _I, "engine": _S, "to_chord_track": {"type": "boolean"}}, ["song"])},
     {"name": "song_check_clashes",
      "description": "Arrangement check of a saved song against the vocal and the Chord Track: vocal_clash (part a "
                     "minor 2nd/9th or major 7th from the vocal), part_clash (two parts a minor 2nd/9th apart), "
@@ -643,7 +633,8 @@ def _audio_sources(song, tracks, tempo, ref):
     return out
 
 
-QUALITY_ENGINES = {"best": "crepe", "fast": "crepe-tiny"}
+MELODY_ENGINE = "pyin"         # best match to a hand-corrected reference in our test
+CROSS_CHECK_ENGINE = "crepe-tiny"  # a neural second opinion; notes where the two differ are mostly wrong
 
 
 def _audio_melody(a, wait):
@@ -672,28 +663,49 @@ def _audio_melody(a, wait):
         lo = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a.get("from_bar") or 1))
         if a.get("to_bar"):
             hi = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a["to_bar"] + 1))
-    engine = a.get("engine") or QUALITY_ENGINES.get(a.get("quality") or "best")
-    if engine is None:
+    quality = a.get("quality") or "best"
+    if quality not in ("best", "fast"):
         raise ToolError("quality must be best or fast")
-    found, unsure, layered = [], [], []
-    for wav, at, file_at, length in sources:
-        s0 = at if lo is None else max(at, lo)
-        s1 = (at + length if length is not None else None)
-        if hi is not None:
-            s1 = hi if s1 is None else min(s1, hi)
-        if s1 is not None and s1 <= s0:
-            continue
-        r = _run_analysis("melody", [wav, file_at + (s0 - at), "-" if s1 is None else s1 - s0, engine])
-        for n in r["notes"]:
-            found.append(dict(n, start=at + n["start"] - file_at, end=at + n["end"] - file_at))
-        unsure.extend([at + x - file_at, at + y - file_at] for x, y in r["unsure"])
-        layered.extend([at + x - file_at, at + y - file_at] for x, y in r.get("layered", []))
+    engine = a.get("engine") or MELODY_ENGINE
+    cross = CROSS_CHECK_ENGINE if quality == "best" and not a.get("engine") else None
+
+    def run(eng):
+        found, unsure, layered = [], [], []
+        for wav, at, file_at, length in sources:
+            s0 = at if lo is None else max(at, lo)
+            s1 = (at + length if length is not None else None)
+            if hi is not None:
+                s1 = hi if s1 is None else min(s1, hi)
+            if s1 is not None and s1 <= s0:
+                continue
+            r = _run_analysis("melody", [wav, file_at + (s0 - at), "-" if s1 is None else s1 - s0, eng])
+            for n in r["notes"]:
+                found.append(dict(n, start=at + n["start"] - file_at, end=at + n["end"] - file_at))
+            unsure.extend([at + x - file_at, at + y - file_at] for x, y in r["unsure"])
+            layered.extend([at + x - file_at, at + y - file_at] for x, y in r.get("layered", []))
+        return found, unsure, layered
+    found, unsure, layered = run(engine)
+    agree = None
+    if cross:
+        other = run(cross)[0]
+        same = 0
+        for n in found:
+            ov = [(min(n["end"], m["end"]) - max(n["start"], m["start"]), m["pitch"]) for m in other]
+            ov = [o for o in ov if o[0] > 0]
+            alt = max(ov)[1] if ov else None
+            if alt == n["pitch"]:
+                same += 1
+            else:
+                n["alt"] = alt  # None: the second engine heard no note here
+                n["check"] = True
+        agree = round(same / len(found), 2) if found else None
     if not timed:
-        return {"engine": engine, "unit": "seconds", "notes": found, "unsure": unsure, "layered": layered}
+        return {"engine": engine, "cross_check": cross, "agree": agree, "unit": "seconds", "notes": found,
+                "unsure": unsure, "layered": layered}
     beat = lambda sec: notegrid.sec_to_beat(tempo, sec)
     notes = [{"beat": beat(n["start"]), "len": beat(n["end"]) - beat(n["start"]), "pitch": n["pitch"],
               "cents": n["cents"], "conf": n["confidence"], "also": n.get("also"),
-              "octave_from": n.get("octave_from")} for n in found]
+              "octave_from": n.get("octave_from"), "check": n.get("check"), "alt": n.get("alt")} for n in found]
     grid = a.get("grid", 0.25)
     notes = notegrid.quantize(notes, grid)
     for n in notes:
@@ -713,9 +725,13 @@ def _audio_melody(a, wait):
             d["also"] = [notegrid.note_name(p) for p in n["also"]]
         if n["octave_from"] is not None:
             d["octave_from"] = notegrid.note_name(n["octave_from"])
+        if n["check"]:
+            d["check"] = notegrid.note_name(n["alt"]) if n["alt"] is not None else "no note"
         return d
     out = {"engine": engine, "grid": grid, "count": len(notes), "notes": [brief(n) for n in notes],
            "unsure": bar_spans(unsure), "layered": bar_spans(layered)}
+    if cross:
+        out.update(cross_check=cross, agree=agree, to_check=sum(1 for n in notes if n["check"]))
     if a.get("to_track") is not None and notes:
         first = notegrid.bar_start(sigs, notes[0]["bar"])
         end = notegrid.bar_start(sigs, notegrid.bar_pos(sigs, notes[-1]["beat"] + notes[-1]["len"] - 1e-6)[0] + 1)
@@ -724,100 +740,6 @@ def _audio_melody(a, wait):
             "notes": [{"pitch": n["pitch"], "start_beats": n["beat"] - first, "length_beats": n["len"],
                        "velocity": 0.8} for n in notes]}, wait)
     return out
-
-
-_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
-_FLAT_KEYS = {"F major", "Bb major", "Eb major", "Ab major", "C# major", "D minor", "G minor", "C minor",
-              "F minor", "Bb minor", "Eb minor"}
-
-
-def _chord_label(c, names):
-    return names[c["root"]] + c["quality"] + ("" if c["bass"] == c["root"] else "/" + names[c["bass"]])
-
-
-def _audio_chords(a):
-    song = _song_path(a["song"])
-    with Song(song) as s:
-        tempo, sigs, tracks = s.tempo_map(), s.time_signatures(), s.tracks()
-    if a.get("track") is not None:
-        sources = _audio_sources(song, tracks, tempo, a["track"])
-    elif a.get("path") and a.get("start_beat") is not None:
-        wav = os.path.expanduser(a["path"])
-        if not os.path.isfile(wav):
-            raise ToolError("file not found: %s" % wav)
-        sources = [(wav, notegrid.beat_to_sec(tempo, a["start_beat"]), 0.0, None)]
-    else:
-        raise ToolError("give track, or path + start_beat")
-    lo = notegrid.bar_start(sigs, a["from_bar"]) if a.get("from_bar") else None
-    hi = notegrid.bar_start(sigs, a["to_bar"] + 1) if a.get("to_bar") else None
-    beats, chroma = [], [0.0] * 12
-    for wav, at, file_at, length in sources:
-        b0 = max(math.ceil(notegrid.sec_to_beat(tempo, at) - 1e-6), lo if lo is not None else -1e9)
-        end_sec = at + length if length is not None else at + _wav_seconds(wav) - file_at
-        b1 = math.floor(notegrid.sec_to_beat(tempo, end_sec) + 1e-6)
-        if hi is not None:
-            b1 = min(b1, hi)
-        if b1 <= b0:
-            continue
-        grid = [b0 + i for i in range(int(b1 - b0) + 1)]
-        secs = [notegrid.beat_to_sec(tempo, b) for b in grid]
-        start = file_at + secs[0] - at
-        strong = []
-        for i, b in enumerate(grid[:-1]):
-            bar, pos = notegrid.bar_pos(sigs, b)
-            num = notegrid._bar_length(notegrid._sigs(sigs), notegrid.bar_start(sigs, bar))[0]
-            if abs(pos - 1) < 1e-6 or (num % 2 == 0 and abs(pos - 1 - num / 2) < 1e-6):
-                strong.append(i)
-        r = _run_analysis("chordrec", [wav, round(start, 4), round(secs[-1] - secs[0], 4),
-                                       ",".join("%.4f" % (t - secs[0]) for t in secs), ",".join(map(str, strong)),
-                                       a.get("engine") or "basic-pitch"])
-        beats.extend((b, c) for b, c in zip(grid, r["beats"]))
-        chroma = [x + y for x, y in zip(chroma, r["chroma"])]
-    key = estimate_key(chroma)[:1]
-    names = _FLAT if key and key[0]["key"] in _FLAT_KEYS else _SHARP
-    out_chords = []
-    for b, c in beats:
-        label = _chord_label(c, names) if c else None
-        if out_chords and out_chords[-1]["chord"] == label and abs(out_chords[-1]["beat"] + out_chords[-1]["len"] - b) < 1e-6:
-            out_chords[-1]["len"] += 1
-            out_chords[-1]["_scores"].append(c["score"] if c else 0)
-            continue
-        out_chords.append({"beat": b, "len": 1, "chord": label, "_scores": [c["score"] if c else 0]})
-    for c in out_chords:
-        bar, pos = notegrid.bar_pos(sigs, c["beat"])
-        c.update(bar=bar, pos=round(pos, 2), conf=round(sum(c["_scores"]) / len(c["_scores"]), 2))
-        del c["_scores"]
-    chords_out = [{k: c[k] for k in ("bar", "pos", "beat", "len", "chord", "conf")} for c in out_chords if c["chord"]]
-    out = {"key": key[0]["key"] if key else None, "count": len(chords_out), "chords": chords_out}
-    if a.get("to_chord_track") and chords_out:
-        items = [{"beat": c["beat"], "length": c["len"], "chord": c["chord"]} for c in chords_out]
-        out["written"] = _offline_edit(song, lambda p: chords.write_chords(p, items, True))
-    return out
-
-
-def _wav_seconds(path):
-    """Duration of a WAV from its fmt and data chunk headers (any sample format)."""
-    import struct
-    with open(path, "rb") as f:
-        if f.read(12)[8:12] != b"WAVE":
-            raise ToolError("not a WAV file: %s" % path)
-        rate = frame = None
-        while True:
-            head = f.read(8)
-            if len(head) < 8:
-                break
-            cid, size = head[:4], struct.unpack("<I", head[4:])[0]
-            if cid == b"fmt ":
-                _tag, ch, rate, _br, frame = struct.unpack("<HHIIH", f.read(14))
-                f.seek(size - 14 + (size & 1), 1)
-            elif cid == b"data":
-                if rate and frame:
-                    return size / float(frame) / rate
-                break
-            else:
-                f.seek(size + (size & 1), 1)
-    raise ToolError("could not read the WAV header: %s" % path)
 
 
 # unpitched or effect parts whose notes are sample triggers, not pitches (skipped unless listed in tracks)
@@ -1647,9 +1569,6 @@ def call(name, a):
 
     if name == "audio_melody":
         return _audio_melody(a, wait)
-
-    if name == "audio_chords":
-        return _audio_chords(a)
 
     if name == "song_check_clashes":
         return _check_clashes(_song_path(a["path"]), a)

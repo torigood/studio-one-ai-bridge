@@ -255,24 +255,21 @@ point `S1BRIDGE_ANALYSIS_PYTHON` at any Python that has numpy.
 
 ### Optional: analysis pack (melody from audio)
 
-`audio_melody` turns a sung or played line in audio into notes on the song's bars, using the CREPE
-neural pitch tracker (MIT) through ONNX Runtime (Core ML on Apple Silicon: about 0.3 s per second of
-audio). Install it once:
+`audio_melody` turns a sung or played line in audio into notes on the song's bars. It tracks pitch
+with pYIN (librosa, ISC) and, by default, checks every note against the CREPE tiny neural tracker
+(MIT, ONNX Runtime): notes where the two disagree are marked `check` with the other engine's pitch.
+On a hand-corrected K-pop a cappella reference, pYIN matched 80% of notes; where both engines agreed
+86% were right, where they disagreed only 35%, so the marks point at the notes worth a listen.
+`quality: "fast"` skips the cross-check. 75 s of vocal takes about 6 s on an M4. Install it once:
 
 ```bash
 studio-one-ai-bridge analysis-setup
 ```
 
 This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy,
-onnxruntime and librosa, plus the CREPE models) outside the app folder, so updates keep it. To build the
-models yourself instead of downloading them: `python tools/export_crepe_onnx.py DIR` (needs torch and
-torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
-
-`engine: "pyin"` uses pYIN (librosa, no neural model): in our test on a K-pop a cappella it matched a
-hand-corrected reference slightly better than CREPE (80% vs 77% of notes) and ran about 3x faster.
-`quality: "fast"` uses CREPE tiny (about 10x faster, a little less accurate); the default `best` uses
-CREPE full. Measured on an M4 for 75 s of vocal: best 25 s, fast 2.3 s, 0.6-0.9 GB of memory while it
-runs; CREPE runs on the GPU/Neural Engine, so the CPU stays mostly free.
+onnxruntime and librosa, about 420 MB, plus the 2 MB CREPE tiny model) outside the app folder, so updates
+keep it. To build the model yourself instead of downloading it: `python tools/export_crepe_onnx.py DIR`
+(needs torch and torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
 
 Layered vocals (doubles, harmonies) are checked with Spotify's Basic Pitch model (Apache 2.0, shipped in
 `server/s1bridge/models/` with its NOTICE): each note moves to the octave that sounds loudest, other
@@ -316,7 +313,6 @@ This removes the extension, the surface, its device entry and the catalog.
 | `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. If the song is open it is saved, closed and reopened automatically; the original is backed up first. |
 | `song_add_loop` | Place a Sound Set `.audioloop` on an audio track of a saved song, repeated to a length. Auto close/reopen like song_write_cc; backed up first. Needs the loop length index (below). |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
-| `audio_chords` | Chords of an instrumental or mix, per beat on the song's bars, spelled for the key; can write them into the Chord Track (analysis pack) |
 | `song_check_clashes` | Arrangement check against the vocal and the Chord Track: semitone/minor-9th clashes with the vocal or between parts, held notes outside the chord (avoid notes), parts crowding the vocal's register, parts in lockstep rhythm. The vocal can be an audio track (analysed with `audio_melody`) or a melody track |
 | `audio_melody` | Notes of a vocal or solo line in audio, placed on the song's bars; can write them to an instrument track (analysis pack) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
