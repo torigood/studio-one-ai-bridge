@@ -61,7 +61,8 @@ class ToolTests(unittest.TestCase):
 
     def test_beat_grid_and_strong_beats(self):
         _, calls = self.run_tool([chord(0)], [1] + [0] * 11, from_bar=2, to_bar=3)
-        wav, start, length, bounds, strong = calls[0]
+        wav, start, length, bounds, strong, engine = calls[0]
+        self.assertEqual(engine, "basic-pitch")
         self.assertEqual((start, length), (0.0, 4.0))  # bar 2 = beat 4 = file 0 s; two bars at 120 bpm
         self.assertEqual(bounds.split(",")[:3], ["0.0000", "0.5000", "1.0000"])
         self.assertEqual(strong, "0,2,4,6")
@@ -105,6 +106,13 @@ class DecodeTests(unittest.TestCase):
         out = chordrec.decode(np.array([r[0] for r in rows]), np.array([r[1] for r in rows]), [0, 4])
         self.assertEqual((out[0]["root"], out[0]["quality"]), (7, "7"))
         self.assertEqual((out[-1]["root"], out[-1]["quality"], out[-1]["bass"]), (4, "m", 11))
+
+    def test_engine_segments_to_beats(self):
+        from s1bridge import chordrec
+        segs = [{"start": 0.0, "end": 1.2, "root": 9, "quality": "m", "bass": 9},
+                {"start": 1.2, "end": 3.0, "root": None}]
+        out = chordrec.from_segments(segs, [0.0, 0.5, 1.0, 1.5, 2.0])
+        self.assertEqual([c and (c["root"], c["quality"]) for c in out], [(9, "m"), (9, "m"), None, None])
 
     def test_silent_beats(self):
         from s1bridge import chordrec

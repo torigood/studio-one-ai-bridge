@@ -228,7 +228,7 @@ TOOLS = [
                     "chords in that range; the song is saved, closed and reopened if open; backed up first). "
                     "Needs the analysis pack.",
      "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
-                             "to_bar": _I, "to_chord_track": {"type": "boolean"}}, ["song"])},
+                             "to_bar": _I, "engine": _S, "to_chord_track": {"type": "boolean"}}, ["song"])},
     {"name": "song_check_clashes",
      "description": "Arrangement check of a saved song against the vocal and the Chord Track: vocal_clash (part a "
                     "minor 2nd/9th or major 7th from the vocal), part_clash (two parts a minor 2nd/9th apart), "
@@ -769,7 +769,8 @@ def _audio_chords(a):
             if abs(pos - 1) < 1e-6 or (num % 2 == 0 and abs(pos - 1 - num / 2) < 1e-6):
                 strong.append(i)
         r = _run_analysis("chordrec", [wav, round(start, 4), round(secs[-1] - secs[0], 4),
-                                       ",".join("%.4f" % (t - secs[0]) for t in secs), ",".join(map(str, strong))])
+                                       ",".join("%.4f" % (t - secs[0]) for t in secs), ",".join(map(str, strong)),
+                                       a.get("engine") or "basic-pitch"])
         beats.extend((b, c) for b, c in zip(grid, r["beats"]))
         chroma = [x + y for x, y in zip(chroma, r["chroma"])]
     key = estimate_key(chroma)[:1]

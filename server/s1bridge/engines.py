@@ -5,6 +5,8 @@ An engine is a dict {"name", "task", "run", "about"}:
                 (monophonic pitch track; melody.py turns it into notes)
   task "notes"  run(samples, sr) -> [{"start": s, "end": s, "pitch": midi, "confidence": 0..1}]
                 (an engine that already finds notes)
+  task "chords" run(samples, sr) -> [{"start": s, "end": s, "root": 0..11 | None, "quality", "bass"}]
+                (for audio_chords; quality as chords.QUALITIES)
 samples is mono float32 at sr Hz (any rate; resample inside the engine if it needs one).
 
 Built-in engines use permissively licensed models only. More engines are loaded from *.py files in

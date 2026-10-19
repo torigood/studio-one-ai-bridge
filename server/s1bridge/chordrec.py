@@ -1,5 +1,5 @@
 """Chords from audio, one decision per beat. Runs in the analysis pack's Python:
-    python -m s1bridge.chordrec <file.wav> <start_sec> <length_sec|-> <bounds> <strong>
+    python -m s1bridge.chordrec <file.wav> <start_sec> <length_sec|-> <bounds> <strong> [engine]
 bounds: comma-separated beat boundaries in seconds from start_sec (n beats = n + 1 values);
 strong: comma-separated indexes of beats where a chord change is natural (bar starts, mid-bar).
 Prints {"beats": [{"root", "quality", "bass", "score"} | null], "chroma": [12 summed weights]}.
@@ -9,6 +9,10 @@ Pitch content comes from Basic Pitch's polyphonic note activations (engines.basi
 against chord templates (cosine similarity, root/third weighted, bass agreement as a bonus) and a
 Viterbi pass picks the sequence, charging for every change and more for changes off strong beats,
 so chords do not flicker with passing notes.
+
+Another engine (engines.py, task "chords": run(samples, sr) -> [{start, end, root, quality, bass}],
+root None = no chord) can replace the built-in decision; beats then take the segment covering most
+of them, and the pitch content still drives the key estimate.
 """
 import json
 import os
@@ -105,11 +109,36 @@ def decode(chroma, bass, strong):
     return out
 
 
-def analyze(path, start_sec, length_sec, bounds, strong):
+def from_segments(segments, bounds):
+    """Beats from an engine's chord segments [{start, end, root, quality, bass} | {start, end, root: None}]:
+    each beat takes the segment covering most of it."""
+    out = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        best, cover = None, 0.0
+        for s in segments:
+            c = min(b, s["end"]) - max(a, s["start"])
+            if c > cover:
+                best, cover = s, c
+        if best is None or best.get("root") is None:
+            out.append(None)
+        else:
+            out.append({"root": int(best["root"]), "quality": best["quality"],
+                        "bass": int(best.get("bass", best["root"])), "score": best.get("score", 1.0)})
+    return out
+
+
+def analyze(path, start_sec, length_sec, bounds, strong, engine="basic-pitch"):
     x, sr = read_wav(path, start_sec, length_sec)
     bp = engines.basic_pitch(x, sr)
     chroma, bass = beat_profiles(np.asarray(bp["notes"]), np.asarray(bp["times"]), np.asarray(bounds))
-    return {"beats": decode(chroma, bass, strong), "chroma": chroma.sum(axis=0).round(3).tolist()}
+    if engine == "basic-pitch":
+        beats = decode(chroma, bass, strong)
+    else:
+        eng = engines.load().get(engine)
+        if eng is None or eng["task"] != "chords":
+            raise SystemExit("unknown chord engine %r" % engine)
+        beats = from_segments(eng["run"](x, sr), list(bounds))
+    return {"beats": beats, "chroma": chroma.sum(axis=0).round(3).tolist()}
 
 
 if __name__ == "__main__":
@@ -118,5 +147,6 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     bounds = [float(v) for v in a[3].split(",")]
     strong = [int(v) for v in a[4].split(",") if v] if len(a) > 4 else []
-    res = analyze(a[0], float(a[1]), None if a[2] == "-" else float(a[2]), bounds, strong)
+    res = analyze(a[0], float(a[1]), None if a[2] == "-" else float(a[2]), bounds, strong,
+                  a[5] if len(a) > 5 else "basic-pitch")
     os.write(out, json.dumps(res).encode() + b"\n")
