@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from s1bridge import tools  # noqa: E402
+from s1bridge import editing, live, tools  # noqa: E402
 
 
 class FakeBridge:
@@ -54,8 +54,8 @@ class Rename(unittest.TestCase):
     def test_renames_track_and_its_instrument_channel(self):
         fb = FakeBridge([{"name": "Vital", "channelType": "MusicTrack", "synth": 0}],
                         [{"name": "Channel04", "label": "Vital"}])
-        with mock.patch.object(tools, "_bridge", fb):
-            r = tools._rename_track("Vital", "Lead", None)
+        with mock.patch.object(live, "bridge", fb):
+            r = editing.rename_track("Vital", "Lead", None)
         self.assertEqual(r["name"], "Lead")
         self.assertEqual(r["instrument_channel"], "Channel04")
         self.assertEqual(fb.synths[0]["label"], "Lead")
@@ -64,31 +64,31 @@ class Rename(unittest.TestCase):
         fb = FakeBridge([{"name": "Vital", "channelType": "MusicTrack", "synth": 0},
                          {"name": "Vital 2", "channelType": "MusicTrack", "synth": 0}],
                         [{"name": "Channel04", "label": "Vital"}])
-        with mock.patch.object(tools, "_bridge", fb):
-            r = tools._rename_track(0, "Lead", None)
+        with mock.patch.object(live, "bridge", fb):
+            r = editing.rename_track(0, "Lead", None)
         self.assertEqual([t["name"] for t in fb.tracks], ["Lead", "Vital 2"])
         self.assertEqual(r["kept_names"], ["Vital 2"])
 
     def test_leaves_unrelated_instrument_channel(self):
         fb = FakeBridge([{"name": "Piano", "channelType": "MusicTrack", "synth": 0}],
                         [{"name": "Channel02", "label": "St-1"}])
-        with mock.patch.object(tools, "_bridge", fb):
-            r = tools._rename_track("Piano", "Keys", None)
+        with mock.patch.object(live, "bridge", fb):
+            r = editing.rename_track("Piano", "Keys", None)
         self.assertNotIn("instrument_channel", r)
         self.assertEqual(fb.synths[0]["label"], "St-1")
 
     def test_empty_name(self):
         with self.assertRaises(tools.ToolError):
-            tools._rename_track("Piano", "", None)
+            editing.rename_track("Piano", "", None)
 
 
 class InstrumentChannelHint(unittest.TestCase):
     def hint(self, fb, track, saved=(None, False), path="/x.song", save_ok=False):
-        with mock.patch.object(tools, "_bridge", fb), \
-                mock.patch.object(tools, "_active_song_path", return_value=path), \
-                mock.patch.object(tools, "_saved_instrument_channel", return_value=saved) as sv, \
-                mock.patch.object(tools, "_save_open_song", return_value=save_ok) as save:
-            return tools._instrument_channel_hint(track), sv, save
+        with mock.patch.object(live, "bridge", fb), \
+                mock.patch.object(live, "active_song_path", return_value=path), \
+                mock.patch.object(live, "saved_instrument_channel", return_value=saved) as sv, \
+                mock.patch.object(live, "save_open_song", return_value=save_ok) as save:
+            return live.instrument_channel_hint(track), sv, save
 
     def test_saved_song_wins(self):
         fb = FakeBridge([{"name": "Lead", "channelType": "MusicTrack", "synth": 0}], [])

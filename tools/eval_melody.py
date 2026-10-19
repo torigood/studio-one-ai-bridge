@@ -21,13 +21,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import mir_eval  # noqa: E402
 
-from s1bridge import notegrid, tools  # noqa: E402
+from s1bridge import analysis_tools, common, notegrid  # noqa: E402
 from s1bridge.song import Song  # noqa: E402
 
 
 def ref_notes(song, track, lo, hi, tempo):
     with Song(song) as s:
-        t = tools._find_track(s.tracks(include_notes=True), track)
+        t = common.find_track(s.tracks(include_notes=True), track)
     out = []
     for p in t["parts"]:
         if p.get("muted"):
@@ -82,7 +82,7 @@ def main():
     ref = ref_notes(a.song, a.ref, lo, hi, tempo)
     print("reference: %d notes" % len(ref))
     for eng in a.engine:
-        r = tools._audio_melody({"song": a.song, "track": a.audio, "from_bar": a.from_bar, "to_bar": a.to_bar,
+        r = analysis_tools.audio_melody({"song": a.song, "track": a.audio, "from_bar": a.from_bar, "to_bar": a.to_bar,
                                  "grid": a.grid, "engine": eng}, 10)
         est = [(notegrid.beat_to_sec(tempo, n["beat"]), notegrid.beat_to_sec(tempo, n["beat"] + n["len"]),
                 n["pitch"]) for n in r["notes"]]
