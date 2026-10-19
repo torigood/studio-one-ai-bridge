@@ -24,6 +24,7 @@ from . import setup
 from . import clients
 from . import automation
 from . import presets
+from . import notegrid
 import time
 from .keys import key_from_notes
 import subprocess
@@ -200,6 +201,15 @@ TOOLS = [
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
      "inputSchema": _schema({"path": _S, "start_sec": _N, "length_sec": _N}, ["path"])},
+    {"name": "audio_melody",
+     "description": "Melody notes of a single voice or instrument in audio (neural pitch tracker): bar, pos (beat in "
+                    "bar), beat, len, note, conf; cents = how far off pitch it was sung; 'unsure' = loud spans with "
+                    "no clear pitch (check by ear). Give song + track (an audio track: positions follow the song) or "
+                    "path (a WAV; with song + start_beat it is placed there, else positions are seconds). from_bar/"
+                    "to_bar limit the range (faster). grid: quarter notes, default 0.25, 0 = unquantized. to_track: "
+                    "write the notes as a new part on that instrument track (live). Needs the analysis pack.",
+     "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
+                             "to_bar": _I, "grid": _N, "engine": _S, "to_track": _TRACK, "wait": _WAIT})},
     {"name": "song_analyze",
      "description": "Musical overview for arranging: tempo, time signature, key from all notes, per-track range and key, "
                     "audio analysis of audio tracks (first 120 s of up to 6 files).",
@@ -537,6 +547,109 @@ def _audio_analyze(path, start=0, length=None):
                             "in the checkout, or set S1BRIDGE_ANALYSIS_PYTHON")
         raise ToolError("analysis failed: %s" % r.stderr.strip()[-500:])
     return json.loads(r.stdout)
+
+
+def _run_analysis(module, args, timeout=900):
+    """Run an analysis module in the analysis pack's Python; its JSON result."""
+    if not os.path.exists(ANALYSIS_PYTHON):
+        raise ToolError("analysis Python not found: %s (run: studio-one-ai-bridge analysis-setup)" % ANALYSIS_PYTHON)
+    r = subprocess.run([ANALYSIS_PYTHON, "-m", "s1bridge." + module] + [str(x) for x in args], cwd=PACKAGE_PARENT,
+                       capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        err = r.stderr.strip()
+        if "ModuleNotFoundError" in err or "model missing" in err:
+            raise ToolError("the analysis pack is not installed: run `studio-one-ai-bridge analysis-setup` "
+                            "(%s)" % err.splitlines()[-1])
+        raise ToolError("analysis failed: %s" % err[-500:])
+    return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+def _audio_sources(song, tracks, tempo, ref):
+    """[(wav, song second where file second `file_at` plays, file_at, length_sec)] for an audio track's events."""
+    t = _find_track(tracks, ref)
+    out = []
+    for p in t["parts"]:
+        if not p.get("source") or p["muted"]:
+            continue
+        wav = _media_path(song, p["source"])
+        if not wav or not wav.lower().endswith(".wav"):
+            raise ToolError("event %r: only WAV files can be analysed (%s)" % (p["name"], p["source"]))
+        if p.get("time_format") == "seconds":
+            out.append((wav, p["start_sec"], p["offset_sec"], p["length_sec"]))
+        else:
+            start = notegrid.beat_to_sec(tempo, p["start_beats"])
+            off = notegrid.beat_to_sec(tempo, p["start_beats"] + p.get("offset_beats", 0)) - start
+            out.append((wav, start, off, notegrid.beat_to_sec(tempo, p["start_beats"] + p["length_beats"]) - start))
+    if not out:
+        raise ToolError("no unmuted audio events on track %r" % (ref,))
+    return out
+
+
+def _audio_melody(a, wait):
+    song = _song_path(a["song"]) if a.get("song") else None
+    tempo, sigs, tracks = [], [], []
+    if song:
+        with Song(song) as s:
+            tempo, sigs, tracks = s.tempo_map(), s.time_signatures(), s.tracks()
+    if a.get("track") is not None:
+        if not song:
+            raise ToolError("track needs song")
+        sources = _audio_sources(song, tracks, tempo, a["track"])
+    elif a.get("path"):
+        wav = os.path.expanduser(a["path"])
+        if not os.path.isfile(wav):
+            raise ToolError("file not found: %s" % wav)
+        placed = song and a.get("start_beat") is not None
+        sources = [(wav, notegrid.beat_to_sec(tempo, a["start_beat"]) if placed else 0.0, 0.0, None)]
+    else:
+        raise ToolError("give song + track, or path")
+    timed = bool(song) and (a.get("track") is not None or a.get("start_beat") is not None)
+    lo, hi = None, None
+    if a.get("from_bar") or a.get("to_bar"):
+        if not timed:
+            raise ToolError("from_bar/to_bar need the audio placed in a song (song + track, or song + start_beat)")
+        lo = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a.get("from_bar") or 1))
+        if a.get("to_bar"):
+            hi = notegrid.beat_to_sec(tempo, notegrid.bar_start(sigs, a["to_bar"] + 1))
+    engine = a.get("engine") or "crepe"
+    found, unsure = [], []
+    for wav, at, file_at, length in sources:
+        s0 = at if lo is None else max(at, lo)
+        s1 = (at + length if length is not None else None)
+        if hi is not None:
+            s1 = hi if s1 is None else min(s1, hi)
+        if s1 is not None and s1 <= s0:
+            continue
+        r = _run_analysis("melody", [wav, file_at + (s0 - at), "-" if s1 is None else s1 - s0, engine])
+        for n in r["notes"]:
+            found.append(dict(n, start=at + n["start"] - file_at, end=at + n["end"] - file_at))
+        unsure.extend([at + x - file_at, at + y - file_at] for x, y in r["unsure"])
+    if not timed:
+        return {"engine": engine, "unit": "seconds", "notes": found, "unsure": unsure}
+    beat = lambda sec: notegrid.sec_to_beat(tempo, sec)
+    notes = [{"beat": beat(n["start"]), "len": beat(n["end"]) - beat(n["start"]), "pitch": n["pitch"],
+              "cents": n["cents"], "conf": n["confidence"]} for n in found]
+    grid = a.get("grid", 0.25)
+    notes = notegrid.quantize(notes, grid)
+    for n in notes:
+        bar, pos = notegrid.bar_pos(sigs, n["beat"])
+        n.update(bar=bar, pos=round(pos, 3), beat=round(n["beat"], 3), len=round(n["len"], 3),
+                 note=notegrid.note_name(n["pitch"]))
+    spans = []
+    for x, y in unsure:
+        bar, pos = notegrid.bar_pos(sigs, beat(x))
+        spans.append({"bar": bar, "pos": round(pos, 2), "len": round(beat(y) - beat(x), 2)})
+    out = {"engine": engine, "grid": grid, "count": len(notes),
+           "notes": [{k: n[k] for k in ("bar", "pos", "beat", "len", "note", "pitch", "cents", "conf")} for n in notes],
+           "unsure": spans}
+    if a.get("to_track") is not None and notes:
+        first = notegrid.bar_start(sigs, notes[0]["bar"])
+        end = notegrid.bar_start(sigs, notegrid.bar_pos(sigs, notes[-1]["beat"] + notes[-1]["len"] - 1e-6)[0] + 1)
+        out["written"] = _bridge("insert_notes", {
+            "track": a["to_track"], "start_beats": first, "length_beats": end - first,
+            "notes": [{"pitch": n["pitch"], "start_beats": n["beat"] - first, "length_beats": n["len"],
+                       "velocity": 0.8} for n in notes]}, wait)
+    return out
 
 
 def _media_path(song_path, url):
@@ -1315,6 +1428,9 @@ def call(name, a):
 
     if name == "audio_analyze":
         return _audio_analyze(a["path"], a.get("start_sec", 0), a.get("length_sec"))
+
+    if name == "audio_melody":
+        return _audio_melody(a, wait)
 
     if name == "song_analyze":
         return _song_analyze(_song_path(a["path"]), a.get("audio", True))

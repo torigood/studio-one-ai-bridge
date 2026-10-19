@@ -253,6 +253,26 @@ checkout (`python3 -m venv .venv && .venv/bin/pip install numpy`), install the p
 extra (`pip install "studio-one-ai-bridge[analysis]"` / `uvx --from "/path[analysis]" ...`), or
 point `S1BRIDGE_ANALYSIS_PYTHON` at any Python that has numpy.
 
+### Optional: analysis pack (melody from audio)
+
+`audio_melody` turns a sung or played line in audio into notes on the song's bars, using the CREPE
+neural pitch tracker (MIT) through ONNX Runtime (Core ML on Apple Silicon: about 0.3 s per second of
+audio). Install it once:
+
+```bash
+studio-one-ai-bridge analysis-setup
+```
+
+This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy and
+onnxruntime, plus the CREPE models, ~90 MB) outside the app folder, so updates keep it. To build the
+models yourself instead of downloading them: `python tools/export_crepe_onnx.py DIR` (needs torch and
+torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
+
+Private engines: a `.py` file in `analysis/engines/` (or `S1BRIDGE_ENGINES_DIR`) that defines
+`ENGINES = [{"name", "task": "f0" | "notes", "run": fn}]` adds engines for `audio_melody`'s `engine`
+argument (see `server/s1bridge/engines.py`). They stay on your Mac, so they can use models whose
+licenses do not allow redistribution.
+
 ### Optional: VST3 parameter names
 
 `tools/vst3dump/` builds a small helper that reads parameter names of installed VST3 plug-ins.
@@ -284,6 +304,7 @@ This removes the extension, the surface, its device entry and the catalog.
 | `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. If the song is open it is saved, closed and reopened automatically; the original is backed up first. |
 | `song_add_loop` | Place a Sound Set `.audioloop` on an audio track of a saved song, repeated to a length. Auto close/reopen like song_write_cc; backed up first. Needs the loop length index (below). |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
+| `audio_melody` | Notes of a vocal or solo line in audio, placed on the song's bars; can write them to an instrument track (analysis pack) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |
 | `library_loops` | Loops in installed Sound Sets, with length/BPM once indexed |

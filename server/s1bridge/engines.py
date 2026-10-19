@@ -1,0 +1,144 @@
+"""Analysis engines (run inside the analysis pack's Python, see analysis_pack.py).
+
+An engine is a dict {"name", "task", "run", "about"}:
+  task "f0"     run(samples, sr) -> {"times": [s], "f0": [Hz, 0 = unvoiced], "confidence": [0..1]}
+                (monophonic pitch track; melody.py turns it into notes)
+  task "notes"  run(samples, sr) -> [{"start": s, "end": s, "pitch": midi, "confidence": 0..1}]
+                (an engine that already finds notes)
+samples is mono float32 at sr Hz (any rate; resample inside the engine if it needs one).
+
+Built-in engines use permissively licensed models only. More engines are loaded from *.py files in
+the engines folder (S1BRIDGE_ENGINES_DIR, default <data dir>/analysis/engines); each file defines
+ENGINES = [ {...}, ... ]. Engines there are private to this Mac and never part of the repository,
+so they may use models whose licenses forbid redistribution.
+"""
+import glob
+import importlib.util
+import os
+
+import numpy as np
+
+from . import config
+
+CREPE_SR = 16000
+CREPE_HOP = 160  # 10 ms
+CREPE_BINS = 360
+
+
+def _resample(x, sr, target):
+    if sr == target:
+        return x.astype(np.float32)
+    from math import gcd
+    from scipy.signal import resample_poly
+    g = gcd(int(sr), int(target))
+    return resample_poly(x, target // g, int(sr) // g).astype(np.float32)
+
+
+def _crepe_frames(x):
+    """1024-sample frames every 10 ms, centred (as torchcrepe), each normalised to zero mean, unit std;
+    and each frame's level in dBFS before normalising."""
+    x = np.pad(x, 512)
+    n = 1 + (len(x) - 1024) // CREPE_HOP
+    idx = np.arange(1024)[None, :] + CREPE_HOP * np.arange(n)[:, None]
+    f = x[idx]
+    f = f - f.mean(axis=1, keepdims=True)
+    std = f.std(axis=1, keepdims=True)
+    return (f / np.maximum(std, 1e-10)).astype(np.float32), 20 * np.log10(std[:, 0] + 1e-9)
+
+
+def _viterbi(probs, width=12):
+    """Most likely bin path; transitions allowed within +-width-1 bins, weight falling linearly (torchcrepe)."""
+    n, k = probs.shape
+    d = np.arange(-width + 1, width)
+    w = (width - np.abs(d)).astype(np.float64)
+    src = np.arange(k)[None, :] - d[:, None]  # src[j, b]: bin b is reached from bin b - d[j]
+    trans = np.where((src >= 0) & (src < k), np.log(w / w.sum())[:, None], -np.inf)
+    src = np.clip(src, 0, k - 1)
+    obs = np.log(probs / np.maximum(probs.sum(axis=1, keepdims=True), 1e-12) + 1e-12)
+    score = obs[0].copy()
+    back = np.zeros((n, k), dtype=np.int16)
+    cols = np.arange(k)
+    for t in range(1, n):
+        cand = score[src] + trans
+        j = cand.argmax(axis=0)
+        back[t] = src[j, cols]
+        score = cand[j, cols] + obs[t]
+    path = np.zeros(n, dtype=np.int64)
+    path[-1] = int(np.argmax(score))
+    for t in range(n - 1, 0, -1):
+        path[t - 1] = back[t, path[t]]
+    return path
+
+
+def _bins_to_hz(probs, path):
+    """Weighted mean of the cents of the bins within +-4 of the path (torchcrepe's local average)."""
+    n = len(path)
+    offs = np.arange(-4, 5)
+    idx = np.clip(path[:, None] + offs[None, :], 0, CREPE_BINS - 1)
+    p = probs[np.arange(n)[:, None], idx]
+    cents = 1997.3794084376191 + 20.0 * idx
+    c = (p * cents).sum(axis=1) / np.maximum(p.sum(axis=1), 1e-12)
+    return 10.0 * 2.0 ** (c / 1200.0)
+
+
+_sessions = {}
+
+
+def _session(path):
+    """ONNX session on Core ML (Apple GPU/Neural Engine, ~3x faster, same output) when available, else CPU."""
+    if path not in _sessions:
+        import onnxruntime as ort
+        opts = ort.SessionOptions()
+        opts.log_severity_level = 3
+        providers = ["CPUExecutionProvider"]
+        if "CoreMLExecutionProvider" in ort.get_available_providers():
+            providers.insert(0, ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram"}))
+        _sessions[path] = ort.InferenceSession(path, opts, providers=providers)
+    return _sessions[path]
+
+
+def crepe_model_path(capacity="full"):
+    return os.path.join(config.ANALYSIS_DIR, "models", "crepe-%s.onnx" % capacity)
+
+
+def _crepe(capacity):
+    def run(samples, sr):
+        path = crepe_model_path(capacity)
+        if not os.path.isfile(path):
+            raise RuntimeError("CREPE model missing: %s (run: studio-one-ai-bridge analysis-setup)" % path)
+        frames, db = _crepe_frames(_resample(samples, sr, CREPE_SR))
+        if not len(frames):
+            return {"times": [], "f0": [], "confidence": []}
+        # silent frames (60 dB under the loudest) are not worth the model's time: about 3 ms a frame
+        live = np.flatnonzero(db > max(db.max() - 60, -90))
+        probs = np.zeros((len(frames), CREPE_BINS), dtype=np.float32)
+        for i in range(0, len(live), 1024):
+            sel = live[i:i + 1024]
+            probs[sel] = _session(path).run(None, {"frames": frames[sel]})[0]
+        path_bins = _viterbi(probs)
+        hz = _bins_to_hz(probs, path_bins)
+        conf = probs[np.arange(len(path_bins)), path_bins]
+        return {"times": (np.arange(len(hz)) * CREPE_HOP / CREPE_SR).tolist(), "f0": hz.tolist(),
+                "confidence": conf.tolist()}
+    return run
+
+
+BUILTIN = [
+    {"name": "crepe", "task": "f0", "run": _crepe("full"),
+     "about": "CREPE full (MIT), neural monophonic pitch tracker, Viterbi-smoothed"},
+    {"name": "crepe-tiny", "task": "f0", "run": _crepe("tiny"),
+     "about": "CREPE tiny (MIT): ~40x faster, less accurate"},
+]
+
+
+def load(engines_dir=None):
+    """name -> engine: built-ins, then the engines folder (a private engine may replace a built-in)."""
+    out = {e["name"]: e for e in BUILTIN}
+    d = engines_dir or config.ENGINES_DIR
+    for f in sorted(glob.glob(os.path.join(d, "*.py"))):
+        spec = importlib.util.spec_from_file_location("s1bridge_engine_" + os.path.basename(f)[:-3], f)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        for e in getattr(mod, "ENGINES", []):
+            out[e["name"]] = dict(e, private=True)
+    return out

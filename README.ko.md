@@ -195,6 +195,12 @@ MIDI 트리거가 없으면 실시간 요청마다 **트랙 → AI Bridge - Run 
 
 - `song_add_loop`는 루프 길이 색인이 필요합니다 (`python3 -m s1bridge.loops fill/harvest`).
 - `audio_analyze`는 numpy가 필요합니다 (`python3 -m venv .venv && .venv/bin/pip install numpy`).
+- `audio_melody`(오디오의 보컬·솔로 라인을 곡 마디 위의 노트로 변환)는 분석 팩이 필요합니다:
+  `studio-one-ai-bridge analysis-setup`. CREPE 신경망 음정 추적(MIT)을 ONNX Runtime으로 돌립니다
+  (Apple Silicon은 Core ML, 오디오 1초당 약 0.3초). 설치 위치는
+  `~/Library/Application Support/studio-one-ai-bridge/analysis/`(약 90 MB)로 앱 폴더 밖이라 업데이트해도 유지됩니다.
+  개인 엔진: `analysis/engines/`에 `ENGINES = [...]`를 정의한 `.py`를 넣으면 `engine` 인자로 쓸 수 있고,
+  레포에 들어가지 않으므로 재배포가 안 되는 라이선스의 모델도 쓸 수 있습니다.
 - VST3 파라미터 이름은 `tools/vst3dump/`를 빌드하면 읽을 수 있습니다.
 
 ### 삭제
@@ -218,6 +224,7 @@ python3 server/run.py uninstall --apply
 | `song_write_cc` | 저장된 곡의 파트에 MIDI CC(모듈레이션, 익스프레션 등) 쓰기. 열려 있으면 자동 저장·닫기·다시 열기, 원본은 먼저 백업 |
 | `song_add_loop` | Sound Set `.audioloop`를 오디오 트랙에 원하는 길이로 반복 배치. 루프 길이 색인 필요 |
 | `audio_analyze` | WAV 파일의 레벨, 스펙트럼 균형, 템포·키 추정 (numpy) |
+| `audio_melody` | 오디오의 보컬·솔로 라인을 곡 마디 위 노트로 추출, 인스트루먼트 트랙에 기록 가능 (분석 팩) |
 | `library_instruments`, `library_effects` | 설치된 플러그인과 클래스 ID |
 | `library_plugin_params` | PreSonus 기본 플러그인의 파라미터 ID (프리셋에서) |
 | `library_loops` | 설치된 Sound Set의 루프 (색인 후 길이·BPM 포함) |

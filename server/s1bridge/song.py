@@ -9,6 +9,8 @@ A .song is a ZIP. The parts used here (observed in Studio One 5.5):
 Units (inference, consistent across inspected files):
   timeFormat="2" positions are quarter notes from song start.
   TempoMapSegment@tempo is seconds per quarter note (bpm = 60 / tempo).
+  AudioEvent timeFormat="0" (audio imported by drag and drop): start, length and offset (into the file)
+  are seconds.
   musicx event start is quarter notes from clip start; MusicPart@offset is the
   clip position at the part's left edge.
 
@@ -19,7 +21,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 
-from . import ubjson
+from . import notegrid, ubjson
 
 _PI = re.compile(r"<\?(?!xml)[^>]*\?>")
 
@@ -140,8 +142,10 @@ class Song:
         out = []
         for seg in self.root.iter("TempoMapSegment"):
             spq = _f(seg.get("tempo"))
-            out.append({"start_beats": _f(seg.get("start")),
-                        "bpm": round(60.0 / spq, 3) if spq else None})
+            seg_out = {"start_beats": _f(seg.get("start")), "bpm": round(60.0 / spq, 3) if spq else None}
+            if seg.get("curveType") == "1":
+                seg_out["ramp"] = True
+            out.append(seg_out)
         return out
 
     def time_signatures(self):
@@ -233,6 +237,13 @@ class Song:
                 p["notes"] = notes
         elif clip:
             p["source"] = clip["url"]
+            if ev.get("timeFormat") == "0":  # audio event placed in seconds: start/length/offset in seconds
+                p.update(time_format="seconds", start_sec=start, length_sec=length, offset_sec=offset)
+                tempo = self.tempo_map()
+                p["start_beats"] = round(notegrid.sec_to_beat(tempo, start), 4)
+                p["length_beats"] = round(notegrid.sec_to_beat(tempo, start + length) - p["start_beats"], 4)
+            else:
+                p["offset_beats"] = offset
         return p
 
     def summary(self):
