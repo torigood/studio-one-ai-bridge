@@ -1568,7 +1568,7 @@ def call(name, a):
         return _audio_analyze(a["path"], a.get("start_sec", 0), a.get("length_sec"))
 
     if name == "audio_melody":
-        return _audio_melody(a, wait)
+        return _audio_melody(a, a.get("wait"))
 
     if name == "song_check_clashes":
         return _check_clashes(_song_path(a["path"]), a)
