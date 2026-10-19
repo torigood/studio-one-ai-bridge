@@ -156,7 +156,6 @@ Check everything at any time (with Studio One running and a song open it also pi
 python3 server/run.py doctor
 ```
 
-The older `python3 install/install.py --surface [--apply]` still works and does the same.
 Once the MCP server is registered (step 3), the AI can also do this for you with the
 `bridge_doctor` and `bridge_setup` tools: quit Studio One and ask it to set up Studio One.
 
@@ -360,7 +359,7 @@ Tools marked `EXPERIMENTAL` in their description use API details that are not fu
 - Offline tools open files read-only. Sound Set contents are never decrypted or read; only their
   file names are listed.
 - `daw_command` refuses File/Close, Quit, Revert, New and Open.
-- Nothing is written into Studio One folders without `setup --apply` (or `install.py --apply`), and
+- Nothing is written into Studio One folders without `setup --apply`, and
   the application bundle is never modified unless you explicitly choose the `--target app-scripts` option.
 - The mailbox is a plain folder in your user directory; any local process can drop jobs into it.
 
@@ -398,10 +397,9 @@ repository itself contains no third-party code.
 server/s1bridge/   MCP server: JSON-RPC loop, tools, song parser, mailbox, MIDI, config
 server/run.py      entry point usable from any directory
 bridge/src/        Studio One extension source (JavaScript + XML)
-bridge/build.py    builds bridge/dist/aibridge.package (for inspection; setup builds it itself)
 packaging/         build_mcpb.py: Claude Desktop extension (.mcpb, with Python) into dist/; start.sh launcher
 surface/           "AI Bridge" control surface definition
-install/           install.sh: one-line installer; install.py: older installer interface
+install/           install.sh: one-line installer
 re/tools/          package reader and catalog extractor (run on your own installation)
 docs/              reverse-engineering notes, installer design
 tests/             python3 -m unittest discover -s tests

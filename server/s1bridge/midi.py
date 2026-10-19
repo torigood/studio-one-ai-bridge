@@ -92,10 +92,6 @@ def open_source(name=PORT_NAME):
         return False
 
 
-def last_error():
-    return _error
-
-
 def _send_local(data):
     if not open_source():
         raise OSError(_error)

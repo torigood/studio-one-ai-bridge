@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
-from s1bridge import midi, setup, tools  # noqa: E402
+from s1bridge import live, midi, setup, tools  # noqa: E402
 
 
 class BridgeToolTests(unittest.TestCase):
@@ -57,13 +57,13 @@ class BridgeToolTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.paths.settings_dir))
 
     def test_status_not_installed(self):
-        r = tools._version_check(None)
+        r = live.version_check(None)
         self.assertIsNone(r["bridge_installed"])
         self.assertIn("bridge_setup", r["problem"])
 
     def test_status_after_setup_has_no_problem(self):
         self.setup_tool()
-        r = tools._version_check({"loaded": True, "version": setup.source_version()})
+        r = live.version_check({"loaded": True, "version": setup.source_version()})
         self.assertEqual(r["bridge_installed"], setup.source_version())
         self.assertNotIn("problem", r)
 
@@ -71,16 +71,16 @@ class BridgeToolTests(unittest.TestCase):
         self.setup_tool()
         with zipfile.ZipFile(os.path.join(self.paths.ext_dir, "scripts", "aibridge.package"), "w") as z:
             z.writestr("bridge.js", 'const kBridgeVersion = "0.0.1";\n')
-        r = tools._version_check({"loaded": True, "version": "0.0.1"})
+        r = live.version_check({"loaded": True, "version": "0.0.1"})
         self.assertIn("older than this server", r["problem"])
 
     def test_status_studio_one_needs_restart(self):
         self.setup_tool()
-        r = tools._version_check({"loaded": True, "version": "0.0.1"})
+        r = live.version_check({"loaded": True, "version": "0.0.1"})
         self.assertIn("restart", r["problem"])
 
     def test_ping_warns_on_old_bridge(self):
-        with mock.patch.object(tools, "_bridge", lambda op, args, wait: {"pong": True, "version": "0.0.1"}):
+        with mock.patch.object(live, "bridge", lambda op, args, wait: {"pong": True, "version": "0.0.1"}):
             r = tools.call("daw_ping", {})
         self.assertIn("bridge_setup", r["warning"])
 
@@ -88,6 +88,9 @@ class BridgeToolTests(unittest.TestCase):
         with mock.patch.object(setup, "doctor", lambda: [{"check": "x", "ok": False, "detail": "", "fix": "y"}]):
             r = tools.call("bridge_doctor", {})
         self.assertFalse(r["ok"])
+
+    def test_every_tool_has_a_handler(self):
+        self.assertEqual(sorted(t["name"] for t in tools.TOOLS), sorted(tools.HANDLERS))
 
 
 if __name__ == "__main__":

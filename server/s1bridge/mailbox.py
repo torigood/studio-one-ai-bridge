@@ -4,7 +4,6 @@ Layout under the mailbox root (default ~/Music/Studio One 5/AIBridge on macOS, i
 Studio One's local://$USERCONTENT/AIBridge):
   inbox/<id>.json    job written here: {"id","op","args","created","protocol"}
   outbox/<id>.json   result written by the bridge: {"id","ok","result"|"error","finished"}
-  done/              unused (File.moveTo did not work inside Studio One)
   status.json        written by the bridge service at startup / shutdown
   host-api*.json     API discovery dumps
 
@@ -32,7 +31,7 @@ class Mailbox:
         return os.path.join(self.root, name)
 
     def ensure(self):
-        for d in ("inbox", "outbox", "done"):
+        for d in ("inbox", "outbox"):
             os.makedirs(self._dir(d), exist_ok=True)
 
     def enqueue(self, op, args=None):

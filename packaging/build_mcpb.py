@@ -20,7 +20,6 @@ Optional check with the official CLI:
 """
 import argparse
 import hashlib
-import io
 import json
 import os
 import re

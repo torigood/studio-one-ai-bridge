@@ -12,7 +12,7 @@ used here only to describe what this software works with.
 - **No PreSonus files are distributed.** This repository contains no code, scripts,
   presets, device definitions or other files copied from Studio One. The command catalog used
   by `commands_search` is generated on your own machine from your own installation by
-  `install/install.py` and is never committed.
+  `setup` (`python3 server/run.py setup`) and is never committed.
 - **Sound Sets are never decrypted.** Only the unencrypted directory (file names) of
   installed `.soundset` files is read so loops can be listed by name. Their encrypted
   contents are not decrypted, extracted or copied; Studio One itself loads them.

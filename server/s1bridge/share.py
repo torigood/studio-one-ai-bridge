@@ -37,7 +37,6 @@ import secrets
 import shutil
 import signal
 import subprocess
-import sys
 import tarfile
 import threading
 import time

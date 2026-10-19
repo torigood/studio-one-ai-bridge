@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ClassFactory>
-	<Version name="AI Bridge" version="0.3.4" vendor="local"/>
+	<Version name="AI Bridge" version="0.8.0" vendor="local"/>
 
 	<!-- Loaded at startup (same category as the Macro Manager service).
-	     Writes status.json and host-api.json; cannot edit the song (no edit context). -->
+	     Writes status.json; cannot edit the song (no edit context). -->
 	<ScriptClass
 		classID="{A23B5E56-BF9B-4F88-8F5F-5491DFC1B7E6}"
 		category="FrameworkService"
@@ -13,7 +13,7 @@
 	</ScriptClass>
 
 	<!-- Runs every job waiting in the inbox with a full edit context.
-	     Run it once by hand (Keyboard Shortcuts); it then starts the idle-task poller.
+	     The AI Bridge control surface presses it (CC 119).
 	     NOTE: adding commandCategory/alwaysEnabled attributes here, together with an idle
 	     task registered at startup, crashed Studio One at launch (0.2.0/0.2.1, 2026-10-17). -->
 	<ScriptClass
@@ -24,16 +24,5 @@
 		sourceFile="tasks.js"
 		functionName="createRunJobsTask">
 		<Attribute id="menuPriority" value="100"/>
-	</ScriptClass>
-
-	<!-- Writes a recursive dump of the Host object to host-api.json (discovery). -->
-	<ScriptClass
-		classID="{FD340BE6-B3F2-4D4D-9B97-618218876435}"
-		category="EditTask"
-		subCategory="TrackEdit"
-		name="AI Bridge - Dump Host API"
-		sourceFile="tasks.js"
-		functionName="createDumpTask">
-		<Attribute id="menuPriority" value="101"/>
 	</ScriptClass>
 </ClassFactory>

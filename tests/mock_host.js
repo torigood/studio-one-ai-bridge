@@ -2,7 +2,7 @@
 // protocol and op dispatch. It does NOT prove the real Studio One API behaves
 // like this mock; it only checks our own glue code.
 //
-// Usage: node tests/mock_host.js <usercontent-dir> [run|dump|service]
+// Usage: node tests/mock_host.js <usercontent-dir> [run|service]
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -12,7 +12,6 @@ const userContent = path.resolve(process.argv[2]);
 const mode = process.argv[3] || "run";
 const src = path.join(__dirname, "..", "bridge", "src");
 const calls = [];
-const idleTasks = [];
 
 class Url {
 	constructor (u, isFolder) {
@@ -104,13 +103,10 @@ const Host = {
 	Interfaces: { IEditTask: "IEditTask", IComponent: "IComponent" },
 	Console: { writeLine: (s) => console.error(s) },
 	Engine: { TrackFormats: { findEqual: (n) => n } },
-	GUI: { addIdleTask: (t) => idleTasks.push(t), removeIdleTask: () => {}, Commands: {
-		findCommand: (c, n) => (c === "Track" && n === "AI Bridge - Run Jobs" ? { c, n } : null), interpretCommand: (c, n, chk, args) => { calls.push(["interpretCommand", c, n, args]); return true; } } },
+	GUI: { Commands: {
+		interpretCommand: (c, n, chk, args) => { calls.push(["interpretCommand", c, n, args]); return true; } } },
 	IO: {
-		File: (url) => ({
-			exists: () => fs.existsSync(url.p),
-			moveTo: (dest) => { fs.renameSync(url.p, dest.p); return true; },
-		}),
+		File: (url) => ({ exists: () => fs.existsSync(url.p) }),
 		findFiles: (folder, pattern) => {
 			const ext = pattern.replace("*", "");
 			const list = fs.readdirSync(folder.p).filter((n) => n.endsWith(ext)).map((n) => { const u = new Url(folder.p); u.descend(n); return u; });
@@ -140,15 +136,8 @@ if (mode === "service") {
 	svc.initialize({});
 } else {
 	sandbox.include_file("tasks.js");
-	const task = vm.runInContext(mode === "dump" ? "createDumpTask()" : "createRunJobsTask()", sandbox);
+	const task = vm.runInContext("createRunJobsTask()", sandbox);
 	task.prepareEdit(context);
 	task.performEdit(context);
-	// "runpoll": after a manual run, a job arriving later
-	// is picked up by the idle task.
-	if (mode === "runpoll") {
-		calls.length = 0;
-		fs.writeFileSync(path.join(userContent, "AIBridge", "inbox", "zz-late.json"), JSON.stringify({ id: "late", op: "ping" }));
-		idleTasks.forEach((t) => t.onTimer());
-	}
 }
 process.stdout.write(JSON.stringify(calls) + "\n");

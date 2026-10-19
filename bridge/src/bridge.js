@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.7.2";
+const kBridgeVersion = "0.8.0";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -62,7 +62,6 @@ function log (msg)
 	try { writeJson (null, "bridge-log.json", gLogLines); } catch(e) {}
 }
 
-/** Returns [{url, job}] for every *.json in inbox, oldest name first. */
 function hasResult (name)
 {
 	let url = mailboxUrl ("outbox", true);
@@ -101,12 +100,6 @@ function pendingJobs ()
 	});
 }
 
-/** Used by the idle task. */
-function hasPendingJobs ()
-{
-	return unresolvedJobPaths ().length > 0;
-}
-
 function finishJob (entry, result)
 {
 	// Result file is named after the inbox file, so hasResult () matches it.
@@ -114,107 +107,6 @@ function finishJob (entry, result)
 	result.protocol = kProtocol;
 	result.finished = new Date ().toISOString ();
 	writeJson ("outbox", entry.name + ".json", result);
-}
-
-//************************************************************************************************
-// Poller - idle task started from the "Run Jobs" edit task (never at app startup).
-// Host.GUI.addIdleTask / ITimerTask.onTimer: names from cclgui ScriptGUIHost and
-// Host.Interfaces. UNVERIFIED: call frequency, onTimer arguments.
-//************************************************************************************************
-
-const kRunJobsName = "AI Bridge - Run Jobs";
-// Edit tasks become commands; the category is not declared in classfactory.xml,
-// so probe likely ones (TrackEdit tasks such as "Arm All Audio Tracks" are in "Track").
-const kRunJobsCategories = ["Track", "Edit", "Event", "AI Bridge"];
-const kPollIntervalMs = 300;
-
-var gPoller = null;
-
-function writePollerStatus (extra)
-{
-	let s = { version: kBridgeVersion, at: new Date ().toISOString () };
-	for(let k in extra)
-		s[k] = extra[k];
-	writeJson (null, "poller.json", s);
-}
-
-function findRunJobsCategory ()
-{
-	for(let c of kRunJobsCategories)
-	{
-		try
-		{
-			if(Host.GUI.Commands.findCommand (c, kRunJobsName))
-				return c;
-		}
-		catch(e) {}
-	}
-	return null;
-}
-
-function PollTask (category)
-{
-	this.interfaces = [Host.Interfaces.ITimerTask];
-	this.category = category;
-	this.last = 0;
-	this.busy = false;
-	this.ticks = 0;
-	this.checks = 0;
-	this.pendingSeen = 0;
-	this.triggers = 0;
-	this.lastResult = null;
-	this.lastError = null;
-	this.lastReport = 0;
-
-	this.report = function (now)
-	{
-		this.lastReport = now;
-		writePollerStatus ({ running: true, category: this.category, ticks: this.ticks, checks: this.checks,
-		                     pendingSeen: this.pendingSeen, triggers: this.triggers,
-		                     lastResult: this.lastResult, lastError: this.lastError });
-	}
-
-	this.onTimer = function ()
-	{
-		this.ticks++;
-		let now = Date.now ();
-		if(this.busy || now - this.last < kPollIntervalMs)
-			return;
-		this.last = now;
-		this.busy = true;
-		try
-		{
-			this.checks++;
-			if(hasPendingJobs ())
-			{
-				this.pendingSeen++;
-				this.triggers++;
-				this.lastResult = String (Host.GUI.Commands.interpretCommand (this.category, kRunJobsName, false, null));
-			}
-		}
-		catch(e)
-		{
-			this.lastError = String (e);
-		}
-		try
-		{
-			if(now - this.lastReport > 2000)
-				this.report (now);
-		}
-		catch(e) {}
-		this.busy = false;
-	}
-}
-
-/** Polling is DISABLED. Passing a script object to Host.GUI.addIdleTask is unsafe in
- *  Studio One 5.5.2: registered at startup it crashed the app (0.2.0/0.2.1); registered
- *  later it never called onTimer and the main thread then spun in cclgui (+0x12a594,
- *  same function as the crash) at 100% CPU (0.3.1). Do not re-enable. 2026-10-17. */
-function startPoller ()
-{
-	let status = { running: false, reason: "disabled: addIdleTask with a script object hangs/crashes Studio One 5.5" };
-	writePollerStatus (status);
-	return status;
 }
 
 //************************************************************************************************

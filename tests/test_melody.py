@@ -1,5 +1,4 @@
 """Melody analysis: song timing (stdlib), note segmentation (numpy), CREPE end to end (analysis pack)."""
-import json
 import os
 import shutil
 import struct
@@ -12,7 +11,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from s1bridge import notegrid, tools  # noqa: E402
+from s1bridge import analysis_tools, notegrid, tools  # noqa: E402
 from s1bridge.song import Song  # noqa: E402
 
 try:
@@ -113,8 +112,8 @@ class SongPlacementTests(unittest.TestCase):
             return {"notes": [{"start": args[1] + 1.0, "end": args[1] + 1.5, "pitch": 64, "cents": 3,
                                "confidence": 0.9}], "unsure": []}
 
-        with mock.patch.object(tools, "_run_analysis", fake):
-            r = tools._audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7}, 1)
+        with mock.patch.object(analysis_tools, "run_analysis", fake):
+            r = analysis_tools.audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7}, 1)
         # bar 7 = beats 24..28 = song 12..14 s = file 6..8 s (event: song 10 s plays file 4 s)
         self.assertEqual(calls[0][1:3], [6.0, 2.0])
         n = r["notes"][0]
@@ -123,7 +122,7 @@ class SongPlacementTests(unittest.TestCase):
     def test_dispatch_through_call(self):
         """The MCP entry point, not just the helper (a missing 'wait' once broke it)."""
         fake = lambda module, args, timeout=900: {"notes": [], "unsure": []}
-        with mock.patch.object(tools, "_run_analysis", fake):
+        with mock.patch.object(analysis_tools, "run_analysis", fake):
             r = tools.call("audio_melody", {"song": self.song, "track": "Vox", "quality": "fast"})
             c = tools.call("song_check_clashes", {"path": self.song, "vocal": "Vox"})
         self.assertEqual((r["count"], c["count"]), (0, 0))
@@ -139,12 +138,12 @@ class SongPlacementTests(unittest.TestCase):
                               {"start": args[1] + 2.0, "end": args[1] + 2.5, "pitch": 60, "cents": 0,
                                "confidence": 0.9}], "unsure": []}
 
-        with mock.patch.object(tools, "_run_analysis", fake):
-            best = tools._audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7}, 1)
-            fast = tools._audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7,
+        with mock.patch.object(analysis_tools, "run_analysis", fake):
+            best = analysis_tools.audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7}, 1)
+            fast = analysis_tools.audio_melody({"song": self.song, "track": "Vox", "from_bar": 7, "to_bar": 7,
                                         "quality": "fast"}, 1)
             with self.assertRaises(tools.ToolError):
-                tools._audio_melody({"song": self.song, "track": "Vox", "quality": "max"}, 1)
+                analysis_tools.audio_melody({"song": self.song, "track": "Vox", "quality": "max"}, 1)
         self.assertEqual(used, ["pyin", "crepe-tiny", "pyin"])
         self.assertEqual([n.get("check") for n in best["notes"]], ["F4", None])
         self.assertEqual((best["agree"], best["to_check"]), (0.5, 1))
@@ -224,7 +223,7 @@ class LayerTests(unittest.TestCase):
         self.assertEqual((found[0]["pitch"], found[0]["also"]), (64, [67]))
 
 
-@unittest.skipIf(np is None or not os.path.isfile(tools.ANALYSIS_PYTHON) or
+@unittest.skipIf(np is None or not os.path.isfile(analysis_tools.ANALYSIS_PYTHON) or
                  not os.path.isfile(os.path.join(ROOT, "server", "s1bridge", "models", "crepe-tiny.onnx")),
                  "needs the analysis pack (studio-one-ai-bridge analysis-setup)")
 class CrepeEndToEndTests(unittest.TestCase):
@@ -235,8 +234,8 @@ class CrepeEndToEndTests(unittest.TestCase):
         try:
             path = os.path.join(d, "m.wav")
             write_wav(path, x, 44100)
-            r = tools._run_analysis("melody", [path, 0, "-", "crepe-tiny"])
-            r_pyin = tools._run_analysis("melody", [path, 0, "-", "pyin"])
+            r = analysis_tools.run_analysis("melody", [path, 0, "-", "crepe-tiny"])
+            r_pyin = analysis_tools.run_analysis("melody", [path, 0, "-", "pyin"])
         finally:
             shutil.rmtree(d)
         self.assertEqual([n["pitch"] for n in r_pyin["notes"]], [p for _, p in truth])
@@ -253,7 +252,7 @@ class CrepeEndToEndTests(unittest.TestCase):
         try:
             path = os.path.join(d, "two.wav")
             write_wav(path, a + b, 44100)
-            r = tools._run_analysis("melody", [path, 0, "-", "pyin"])
+            r = analysis_tools.run_analysis("melody", [path, 0, "-", "pyin"])
         finally:
             shutil.rmtree(d)
         self.assertTrue(r["layered"], r)

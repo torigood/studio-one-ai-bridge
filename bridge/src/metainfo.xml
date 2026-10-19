@@ -3,6 +3,6 @@
 	<Attribute id="Package:ID" value="local.s1aibridge"/>
 	<Attribute id="Package:Name" value="AI Bridge"/>
 	<Attribute id="Package:Description" value="Mailbox bridge between Studio One and an external MCP server"/>
-	<Attribute id="Package:Version" value="0.3.4"/>
+	<Attribute id="Package:Version" value="0.8.0"/>
 	<Attribute id="Package:Vendor" value="local"/>
 </MetaInformation>

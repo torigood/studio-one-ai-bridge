@@ -73,6 +73,14 @@ class SetupTests(unittest.TestCase):
         latest = os.path.join(self.paths.backups, sorted(backups)[-1])
         self.assertTrue(any(n.endswith("MusicDevices.settings") for n in os.listdir(latest)))
 
+    def test_bridge_xml_versions_match_bridge_js(self):
+        """classfactory.xml and metainfo.xml carry the same version as kBridgeVersion."""
+        import re
+        want = setup.source_version()
+        for name in ("classfactory.xml", "metainfo.xml"):
+            with open(os.path.join(setup.BRIDGE_SRC, name), encoding="utf-8") as f:
+                self.assertEqual(re.findall(r'(?:version|value)="(\d+\.\d+\.\d+)"', f.read()), [want], name)
+
     def test_doctor_flags_outdated_bridge(self):
         self.install()
         package = os.path.join(self.paths.ext_dir, "scripts", "aibridge.package")
