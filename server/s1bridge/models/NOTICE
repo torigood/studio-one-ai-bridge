@@ -1,3 +1,12 @@
+Third-party models used by the analysis tools.
+
+crepe-full.onnx, crepe-tiny.onnx (installed by `studio-one-ai-bridge analysis-setup`, not stored in
+this folder): CREPE pitch tracker weights (https://github.com/marl/crepe, MIT, LICENSE-crepe) as
+ported to PyTorch by torchcrepe (https://github.com/maxrmorrison/torchcrepe, MIT, LICENSE-torchcrepe),
+converted to ONNX by tools/export_crepe_onnx.py without changing the weights.
+J. W. Kim, J. Salamon, P. Li, J. P. Bello, "CREPE: A Convolutional Representation for Pitch
+Estimation", ICASSP 2018.
+
 basic-pitch.onnx: the Basic Pitch model (nmp.onnx, ICASSP 2022) from basic-pitch 0.4.0,
 https://github.com/spotify/basic-pitch, unmodified. Apache License 2.0 (LICENSE-basic-pitch).
 

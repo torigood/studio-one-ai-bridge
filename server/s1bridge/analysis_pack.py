@@ -7,8 +7,8 @@ Creates <analysis dir>/venv (numpy, scipy, onnxruntime) with the interpreter run
 outside the app folder, so updating the bridge keeps it. The server itself stays stdlib-only and
 runs the analysis modules in this venv as a subprocess.
 
-Models: CREPE (MIT, github.com/marl/crepe) weights from torchcrepe, exported to ONNX by
-tools/export_crepe_onnx.py. They are taken from --model-dir if given, else downloaded from the
+Models: CREPE (MIT, github.com/marl/crepe) weights from torchcrepe (MIT), exported to ONNX by
+tools/export_crepe_onnx.py; licenses and credits in models/NOTICE, which the release asset ships too. They are taken from --model-dir if given, else downloaded from the
 project's GitHub release and checked against the SHA-256 below.
 """
 import hashlib
