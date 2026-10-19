@@ -263,11 +263,13 @@ audio). Install it once:
 studio-one-ai-bridge analysis-setup
 ```
 
-This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy and
-onnxruntime, plus the CREPE models, ~90 MB) outside the app folder, so updates keep it. To build the
+This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy,
+onnxruntime and librosa, plus the CREPE models) outside the app folder, so updates keep it. To build the
 models yourself instead of downloading them: `python tools/export_crepe_onnx.py DIR` (needs torch and
 torchcrepe), then `studio-one-ai-bridge analysis-setup --model-dir DIR`.
 
+`engine: "pyin"` uses pYIN (librosa, no neural model): in our test on a K-pop a cappella it matched a
+hand-corrected reference slightly better than CREPE (80% vs 77% of notes) and ran about 3x faster.
 `quality: "fast"` uses CREPE tiny (about 10x faster, a little less accurate); the default `best` uses
 CREPE full. Measured on an M4 for 75 s of vocal: best 25 s, fast 2.3 s, 0.6-0.9 GB of memory while it
 runs; CREPE runs on the GPU/Neural Engine, so the CPU stays mostly free.

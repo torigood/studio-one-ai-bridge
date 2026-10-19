@@ -124,7 +124,15 @@ def notes(times, f0, conf, db):
     min_frames = max(int(round(MIN_NOTE / hop)), 1)
     out = []
     for i, j in _runs(voiced):
+        segs = []
         for a, b in _split_pitch(midi, i, j):
+            # neighbours that round to the same note (a slide's tail) are one note; re-sung notes are
+            # still separated below by loudness
+            if segs and round(float(np.median(midi[segs[-1][0]:segs[-1][1]]))) == round(float(np.median(midi[a:b]))):
+                segs[-1] = (segs[-1][0], b)
+            else:
+                segs.append((a, b))
+        for a, b in segs:
             for s, e in _split_onsets(db, a, b, min_frames):
                 if e - s < min_frames:
                     continue

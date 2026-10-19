@@ -220,8 +220,10 @@ class CrepeEndToEndTests(unittest.TestCase):
             path = os.path.join(d, "m.wav")
             write_wav(path, x, 44100)
             r = tools._run_analysis("melody", [path, 0, "-", "crepe"])
+            r_pyin = tools._run_analysis("melody", [path, 0, "-", "pyin"])
         finally:
             shutil.rmtree(d)
+        self.assertEqual([n["pitch"] for n in r_pyin["notes"]], [p for _, p in truth])
         self.assertEqual([n["pitch"] for n in r["notes"]], [p for _, p in truth])
         for n, (start, _) in zip(r["notes"], truth):
             self.assertAlmostEqual(n["start"], start, delta=0.03)

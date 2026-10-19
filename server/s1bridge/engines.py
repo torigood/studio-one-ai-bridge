@@ -129,6 +129,17 @@ def _crepe(capacity):
     return run
 
 
+def _pyin(samples, sr):
+    """Probabilistic YIN (Mauch & Dixon 2014) from librosa (ISC). Its voicing probabilities sit far
+    below the note splitter's threshold, so its own voiced/unvoiced decision is the confidence."""
+    import librosa
+    x = _resample(samples, sr, CREPE_SR)
+    f0, voiced, _ = librosa.pyin(x, fmin=65, fmax=1100, sr=CREPE_SR, frame_length=2048, hop_length=CREPE_HOP)
+    f0 = np.nan_to_num(f0)
+    return {"times": (np.arange(len(f0)) * CREPE_HOP / CREPE_SR).tolist(),
+            "f0": np.where(voiced, f0, 0.0).tolist(), "confidence": np.where(voiced, 0.9, 0.0).tolist()}
+
+
 # Basic Pitch (Spotify, Apache 2.0; models/NOTICE): a small polyphonic note model. Here it answers
 # "which notes sound at once", to find layered vocals (doubles, harmonies) the f0 trackers cannot see.
 BP_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "basic-pitch.onnx")
@@ -172,6 +183,8 @@ BUILTIN = [
      "about": "CREPE full (MIT), neural monophonic pitch tracker, Viterbi-smoothed"},
     {"name": "crepe-tiny", "task": "f0", "run": _crepe("tiny"),
      "about": "CREPE tiny (MIT): ~40x faster, less accurate"},
+    {"name": "pyin", "task": "f0", "run": _pyin,
+     "about": "pYIN (librosa, ISC): signal processing, no model; ~3x faster than CREPE full"},
 ]
 
 

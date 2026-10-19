@@ -201,6 +201,8 @@ MIDI 트리거가 없으면 실시간 요청마다 **트랙 → AI Bridge - Run 
   `~/Library/Application Support/studio-one-ai-bridge/analysis/`(약 90 MB)로 앱 폴더 밖이라 업데이트해도 유지됩니다.
   겹친 보컬(더블링·화음)은 Spotify Basic Pitch 모델(Apache 2.0, `server/s1bridge/models/`에 NOTICE와 포함)로 확인해서,
   더 크게 들리는 옥타브로 노트를 옮기고(`octave_from`), 같이 울리는 음은 `also`, 두 성부 이상 겹친 구간은 `layered`로 표시합니다.
+  `engine: "pyin"`은 신경망 없는 pYIN(librosa)을 씁니다. K-pop 아카펠라 테스트에서 직접 고친 정답과의 일치가
+  CREPE보다 약간 높았고(80% vs 77%) 약 3배 빨랐습니다.
   `quality: "fast"`는 CREPE tiny(약 10배 빠름, 정확도 약간 낮음), 기본값 `best`는 CREPE full을 씁니다
   (M4, 보컬 75초 기준 best 25초 / fast 2.3초, 실행 중 메모리 0.6~0.9 GB).
   분석은 낮은 CPU 우선순위로 돌아 재생을 방해하지 않고, 결과는 파일·구간별로 `analysis/cache/`에 캐시됩니다.

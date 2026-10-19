@@ -2,7 +2,7 @@
 
     studio-one-ai-bridge analysis-setup [--model-dir DIR]
 
-Creates <analysis dir>/venv (numpy, scipy, onnxruntime) with the interpreter running this command
+Creates <analysis dir>/venv (numpy, scipy, onnxruntime, librosa for pYIN) with the interpreter running this command
 (the release bundles CPython 3.12) and puts the CREPE ONNX models in <analysis dir>/models. It lives
 outside the app folder, so updating the bridge keeps it. The server itself stays stdlib-only and
 runs the analysis modules in this venv as a subprocess.
@@ -20,7 +20,7 @@ import urllib.request
 
 from . import config
 
-PACKAGES = ["numpy", "scipy", "onnxruntime"]
+PACKAGES = ["numpy", "scipy", "onnxruntime", "librosa"]
 MODEL_URL = "https://github.com/torigood/studio-one-ai-bridge/releases/download/models-1/%s"
 MODELS = {
     "crepe-full.onnx": "939c3f282e7fa1a4faf6e2bcf51caa5beaafec4ff2efd1d39e4f5b5d3becb0e7",

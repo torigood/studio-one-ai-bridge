@@ -214,7 +214,8 @@ TOOLS = [
                     "path (a WAV; with song + start_beat it is placed there, else positions are seconds). from_bar/"
                     "to_bar limit the range (faster). grid: quarter notes, default 0.25, 0 = unquantized. to_track: "
                     "write the notes as a new part on that instrument track (live). quality: best (default, "
-                    "CREPE full) or fast (CREPE tiny: ~10x faster, slightly less accurate). Needs the analysis "
+                    "CREPE full) or fast (CREPE tiny: ~10x faster, slightly less accurate); engine=pyin is a "
+                    "model-free alternative that holds the octave better on doubled vocals. Needs the analysis "
                     "pack.",
      "inputSchema": _schema({"song": _SONG, "track": _TRACK, "path": _S, "start_beat": _N, "from_bar": _I,
                              "to_bar": _I, "grid": _N, "quality": _QUALITY, "engine": _S, "to_track": _TRACK,
