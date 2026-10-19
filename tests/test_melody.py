@@ -120,6 +120,14 @@ class SongPlacementTests(unittest.TestCase):
         n = r["notes"][0]
         self.assertEqual((n["bar"], n["pos"], n["len"], n["note"]), (7, 3.0, 1.0, "E4"))
 
+    def test_dispatch_through_call(self):
+        """The MCP entry point, not just the helper (a missing 'wait' once broke it)."""
+        fake = lambda module, args, timeout=900: {"notes": [], "unsure": []}
+        with mock.patch.object(tools, "_run_analysis", fake):
+            r = tools.call("audio_melody", {"song": self.song, "track": "Vox", "quality": "fast"})
+            c = tools.call("song_check_clashes", {"path": self.song, "vocal": "Vox"})
+        self.assertEqual((r["count"], c["count"]), (0, 0))
+
     def test_best_cross_checks_and_flags_disagreements(self):
         used = []
 
