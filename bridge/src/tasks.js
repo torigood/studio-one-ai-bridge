@@ -1,7 +1,9 @@
 include_file ("bridge.js");
 
 //************************************************************************************************
-// RunJobsTask - executes all pending inbox jobs with the edit context of the active song
+// RunJobsTask - executes all pending inbox jobs with the edit context of the active song.
+// It runs only when pressed: the AI Bridge surface maps CC 119 to it. There is no poller:
+// Host.GUI.addIdleTask with a script object crashed (at startup) or hung (later) Studio One 5.5.2.
 //************************************************************************************************
 
 function RunJobsTask ()
@@ -24,29 +26,6 @@ function RunJobsTask ()
 			finishJob (entry, result);
 		}
 		log ("ran " + jobs.length + " job(s)");
-		try { startPoller (); } catch(e) { log ("startPoller: " + e); }
-		return Host.Results.kResultOk;
-	}
-}
-
-//************************************************************************************************
-// DumpTask - writes host-api.json for API discovery
-//************************************************************************************************
-
-function DumpTask ()
-{
-	this.interfaces = [Host.Interfaces.IEditTask];
-
-	this.prepareEdit = function (context)
-	{
-		return Host.Results.kResultOk;
-	}
-
-	this.performEdit = function (context)
-	{
-		writeJson (null, "host-api.json", dumpObject (Host, "Host", 3));
-		writeJson (null, "context-api.json", dumpObject (context, "context", 2));
-		log ("wrote host-api.json and context-api.json");
 		return Host.Results.kResultOk;
 	}
 }
@@ -58,9 +37,4 @@ function DumpTask ()
 function createRunJobsTask ()
 {
 	return new RunJobsTask;
-}
-
-function createDumpTask ()
-{
-	return new DumpTask;
 }

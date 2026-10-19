@@ -52,7 +52,7 @@ _catalog = None
 def _load_catalog():
     global _catalog
     if _catalog is None:
-        path = config.catalog_path()
+        path = config.CATALOG
         try:
             with open(path, encoding="utf-8") as f:
                 _catalog = json.load(f)
@@ -1071,13 +1071,6 @@ def _tracks(wait):
     return r["tracks"]
 
 
-def _find_track(tracks, ref):
-    for t in tracks:
-        if (isinstance(ref, int) and t["index"] == ref) or t["name"] == ref:
-            return t
-    raise ToolError("track not found: %r" % (ref,))
-
-
 # Mixer channel by daw_list_mixer index, for daw_call steps (MixerConsole channel list 1, see bridge.js).
 def _mixer_channel_steps(index, var):
     return [{"as": var + "_f", "on": {"context": True}, "get": "functions"},
@@ -1646,9 +1639,8 @@ def call(name, a):
     if name == "daw_status":
         mb = Mailbox()
         status = mb.read_json("status.json")
-        # poller.json reports the bridge's idle poller, which is off on purpose (addIdleTask hangs Studio One
-        # 5.5); AIs read "running: false" as "live editing is off", so it is not reported. Jobs run through
-        # the AI Bridge MIDI button; status.loaded and daw_ping tell whether that works.
+        # Jobs run when the AI Bridge MIDI button presses Run Jobs; status.loaded and daw_ping tell whether
+        # that works.
         out = {"mailbox": mb.root, "status": status, "pending_jobs": mb.pending(),
                "job_trigger": "virtual MIDI button 'AI Bridge' (normal; live editing works when daw_ping answers)"}
         out.update(_version_check(status))

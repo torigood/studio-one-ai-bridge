@@ -312,7 +312,7 @@ server/run.py      어느 폴더에서나 쓸 수 있는 진입점
 bridge/src/        Studio One 확장 소스 (JavaScript + XML)
 packaging/         build_mcpb.py: Claude Desktop 확장(.mcpb, Python 포함)을 dist/에 빌드; start.sh 실행기
 surface/           "AI Bridge" 컨트롤 서피스 정의
-install/           install.sh: 한 줄 설치 스크립트; install.py: 예전 설치 인터페이스
+install/           install.sh: 한 줄 설치 스크립트
 re/tools/          패키지 리더와 카탈로그 추출기 (내 설치에서 실행)
 docs/              역공학 노트, 설치 설계, ChatGPT 가이드
 tests/             python3 -m unittest discover -s tests

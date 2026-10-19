@@ -147,23 +147,16 @@ class RoundTrip(unittest.TestCase):
     def test_service_and_dump(self):
         self.run_bridge("service")
         self.assertTrue(self.mb.read_json("status.json")["loaded"])
-        self.run_bridge("dump")
-        dump = self.mb.read_json("host-api.json")
-        self.assertIn("IO", dump["members"])
-
-    def test_service_has_no_poller(self):
-        self.run_bridge("service")
-        st = self.mb.read_json("status.json")
-        self.assertTrue(st["loaded"])
-        self.assertNotIn("polling", st)
-        self.assertIsNone(self.mb.read_json("poller.json"))
-
-    def test_poller_disabled(self):
-        self.mb.ensure()
+        job = self.mb.enqueue("dump_host")
         self.run_bridge()
-        poller = self.mb.read_json("poller.json")
-        self.assertFalse(poller["running"])
-        self.assertIn("disabled", poller["reason"])
+        self.assertEqual(self.mb.result(job)["result"]["written"], "host-api.json")
+        self.assertIn("IO", self.mb.read_json("host-api.json")["members"])
+
+    def test_no_poller(self):
+        self.mb.ensure()
+        self.run_bridge("service")
+        self.run_bridge()
+        self.assertIsNone(self.mb.read_json("poller.json"))
 
     def test_invalid_json_job(self):
         self.mb.ensure()

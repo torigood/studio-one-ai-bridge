@@ -1,8 +1,8 @@
 """Read-only access to Studio One Sound Sets (*.soundset, "PACKAGEF" container).
 
 Same container as script packages (see re/tools/s1pkg.py), but sound sets are
-hundreds of MB, so only the directory at the end of the file is read; entries
-are read one at a time.
+hundreds of MB, so only the directory at the end of the file is read. Entry contents
+(encrypted by PreSonus) are never read.
 
 Directory (little endian), observed in Studio One 5.5:
   Root : "Root" u32(1) u32(count) entries...
@@ -11,7 +11,6 @@ Directory (little endian), observed in Studio One 5.5:
 """
 import os
 import struct
-import zlib
 
 _MAGIC = b"PACKAGEF"
 _ROOT = b"Root\x01\x00\x00\x00"
@@ -68,14 +67,3 @@ def list_entries(path):
     _entries(d, root + 12, count, "", out)
     return out
 
-
-def read_entry(path, entry):
-    with open(path, "rb") as f:
-        f.seek(entry["offset"])
-        blob = f.read(entry["csize"])
-    if entry["csize"] == entry["size"]:
-        return blob
-    try:
-        return zlib.decompress(blob)
-    except zlib.error:
-        return blob
