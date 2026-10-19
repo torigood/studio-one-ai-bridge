@@ -9,6 +9,8 @@ A .song is a ZIP. The parts used here (observed in Studio One 5.5):
 Units (inference, consistent across inspected files):
   timeFormat="2" positions are quarter notes from song start.
   TempoMapSegment@tempo is seconds per quarter note (bpm = 60 / tempo).
+  AudioEvent timeFormat="0" (audio imported by drag and drop): start, length and offset (into the file)
+  are seconds.
   musicx event start is quarter notes from clip start; MusicPart@offset is the
   clip position at the part's left edge.
 
@@ -19,7 +21,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 
-from . import ubjson
+from . import notegrid, ubjson
 
 _PI = re.compile(r"<\?(?!xml)[^>]*\?>")
 
@@ -41,6 +43,24 @@ def _f(v, default=0.0):
 
 def gain_to_db(g):
     return round(20 * math.log10(g), 2) if g and g > 0 else float("-inf")
+
+
+def fifths_pc(f):
+    """Circle-of-fifths position (C=0, G=1, F=-1) -> pitch class."""
+    return (f * 7) % 12
+
+
+def fifths_name(f):
+    """6 -> 'F#', -2 -> 'Bb'."""
+    i = f + 1
+    return "FCGDAEB"[i % 7] + ("#" * (i // 7) if i >= 0 else "b" * (-(i // 7)))
+
+
+def chord_name(root, intervals, bass=None):
+    from .chords import QUALITIES
+    q = next((k for k, v in QUALITIES.items() if v == tuple(intervals)), None)
+    name = fifths_name(root) + (q if q is not None else "(%s)" % ",".join(map(str, intervals)))
+    return name + ("/" + fifths_name(bass) if bass is not None and bass != root else "")
 
 
 class Song:
@@ -140,8 +160,10 @@ class Song:
         out = []
         for seg in self.root.iter("TempoMapSegment"):
             spq = _f(seg.get("tempo"))
-            out.append({"start_beats": _f(seg.get("start")),
-                        "bpm": round(60.0 / spq, 3) if spq else None})
+            seg_out = {"start_beats": _f(seg.get("start")), "bpm": round(60.0 / spq, 3) if spq else None}
+            if seg.get("curveType") == "1":
+                seg_out["ramp"] = True
+            out.append(seg_out)
         return out
 
     def time_signatures(self):
@@ -155,6 +177,24 @@ class Song:
             out.append({"name": m.get("name"), "start_beats": _f(m.get("start")),
                         "type": m.get("markerType")})
         return out
+
+    def chords(self):
+        """Chord Track events: [{start_beats, length_beats, name, root, bass, pcs}], pitch classes 0 = C.
+        ChordEvent Attributes: root/bass on the circle of fifths, intervals = 12 flags above the root
+        (non-zero = in the chord; chords.py)."""
+        out = []
+        for ev in self.root.iter("ChordEvent"):
+            a = ev.find("Attributes")
+            if a is None or a.get("root") is None:
+                continue
+            root = int(_f(a.get("root")))
+            bass = int(_f(a.get("bass"), root))
+            flags = (a.get("intervals") or "").split()
+            ivs = tuple(i for i, v in enumerate(flags) if v not in ("0", ""))
+            out.append({"start_beats": _f(ev.get("start")), "length_beats": _f(ev.get("length")),
+                        "name": chord_name(root, ivs, bass), "root": fifths_pc(root), "bass": fifths_pc(bass),
+                        "pcs": sorted({(fifths_pc(root) + i) % 12 for i in ivs})})
+        return sorted(out, key=lambda c: c["start_beats"])
 
     def arranger_sections(self):
         out = []
@@ -233,6 +273,13 @@ class Song:
                 p["notes"] = notes
         elif clip:
             p["source"] = clip["url"]
+            if ev.get("timeFormat") == "0":  # audio event placed in seconds: start/length/offset in seconds
+                p.update(time_format="seconds", start_sec=start, length_sec=length, offset_sec=offset)
+                tempo = self.tempo_map()
+                p["start_beats"] = round(notegrid.sec_to_beat(tempo, start), 4)
+                p["length_beats"] = round(notegrid.sec_to_beat(tempo, start + length) - p["start_beats"], 4)
+            else:
+                p["offset_beats"] = offset
         return p
 
     def summary(self):

@@ -25,3 +25,6 @@ studio-one-ai-bridge = "s1bridge.__main__:main"
 [tool.setuptools]
 package-dir = { "" = "server" }
 packages = ["s1bridge"]
+
+[tool.setuptools.package-data]
+s1bridge = ["models/*"]

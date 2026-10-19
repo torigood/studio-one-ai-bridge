@@ -253,6 +253,35 @@ checkout (`python3 -m venv .venv && .venv/bin/pip install numpy`), install the p
 extra (`pip install "studio-one-ai-bridge[analysis]"` / `uvx --from "/path[analysis]" ...`), or
 point `S1BRIDGE_ANALYSIS_PYTHON` at any Python that has numpy.
 
+### Optional: analysis pack (melody from audio)
+
+`audio_melody` turns a sung or played line in audio into notes on the song's bars. It tracks pitch
+with pYIN (librosa, ISC) and, by default, checks every note against the CREPE tiny neural tracker
+(MIT, ONNX Runtime): notes where the two disagree are marked `check` with the other engine's pitch.
+On a hand-corrected K-pop a cappella reference, pYIN matched 80% of notes; where both engines agreed
+86% were right, where they disagreed only 35%, so the marks point at the notes worth a listen.
+`quality: "fast"` skips the cross-check. 75 s of vocal takes about 6 s on an M4. Install it once:
+
+```bash
+studio-one-ai-bridge analysis-setup
+```
+
+This makes `~/Library/Application Support/studio-one-ai-bridge/analysis/` (a venv with numpy, scipy,
+onnxruntime and librosa, about 420 MB) outside the app folder, so updates keep it. The two models
+(CREPE tiny 2 MB, Basic Pitch 0.2 MB) ship with the bridge in `server/s1bridge/models/` with their
+licenses; `tools/export_crepe_onnx.py` rebuilds the CREPE one from torchcrepe.
+
+Layered vocals (doubles, harmonies) are checked with Spotify's Basic Pitch model (Apache 2.0, shipped in
+`server/s1bridge/models/` with its NOTICE): each note moves to the octave that sounds loudest, other
+pitches under it are listed as `also`, and `layered` lists the spans with two or more voices, where a
+single-line result deserves a listen. Analysis runs at low CPU priority so playback keeps going, and
+results are cached per file and range in `analysis/cache/`.
+
+Private engines: a `.py` file in `analysis/engines/` (or `S1BRIDGE_ENGINES_DIR`) that defines
+`ENGINES = [{"name", "task": "f0" | "notes", "run": fn}]` adds engines for `audio_melody`'s `engine`
+argument (see `server/s1bridge/engines.py`). They stay on your Mac, so they can use models whose
+licenses do not allow redistribution.
+
 ### Optional: VST3 parameter names
 
 `tools/vst3dump/` builds a small helper that reads parameter names of installed VST3 plug-ins.
@@ -284,6 +313,8 @@ This removes the extension, the surface, its device entry and the catalog.
 | `song_write_cc` | Write MIDI CC (modulation, expression, ...) into a part of a saved song. If the song is open it is saved, closed and reopened automatically; the original is backed up first. |
 | `song_add_loop` | Place a Sound Set `.audioloop` on an audio track of a saved song, repeated to a length. Auto close/reopen like song_write_cc; backed up first. Needs the loop length index (below). |
 | `audio_analyze` | Level, spectrum balance, tempo and key estimate of a WAV file (numpy) |
+| `song_check_clashes` | Arrangement check against the vocal and the Chord Track: semitone/minor-9th clashes with the vocal or between parts, held notes outside the chord (avoid notes), parts crowding the vocal's register, parts in lockstep rhythm. The vocal can be an audio track (analysed with `audio_melody`) or a melody track |
+| `audio_melody` | Notes of a vocal or solo line in audio, placed on the song's bars; can write them to an instrument track (analysis pack) |
 | `library_instruments`, `library_effects` | Installed plug-ins with class IDs |
 | `library_plugin_params` | Parameter IDs of native PreSonus plug-ins (from their presets) |
 | `library_loops` | Loops in installed Sound Sets, with length/BPM once indexed |

@@ -102,6 +102,9 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "share":
         from . import share
         sys.exit(share.cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "analysis-setup":
+        from . import analysis_pack
+        sys.exit(analysis_pack.cli(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] in ("setup", "doctor", "uninstall", "connect"):
         from . import setup
         sys.exit(setup.cli(sys.argv[1:]))
