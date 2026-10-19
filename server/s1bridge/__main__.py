@@ -12,7 +12,7 @@ import traceback
 
 from . import tools
 
-SERVER_INFO = {"name": "studio-one-ai-bridge", "version": "0.5.1"}  # keep equal to pyproject.toml
+SERVER_INFO = {"name": "studio-one-ai-bridge", "version": "0.6.0"}  # keep equal to pyproject.toml
 INSTRUCTIONS = (
     "Studio One 5 bridge. daw_* tools act live on the open song through the in-DAW bridge (check daw_status "
     "first); song_* tools work on saved .song files. Conventions for all tools: song = absolute .song path "
