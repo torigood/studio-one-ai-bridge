@@ -65,6 +65,16 @@ class VitalPreset(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class Duck(unittest.TestCase):
+    def test_dips_and_overlaps(self):
+        pts = sound.duck_points([0, 2, 2.1], -6, 6, 0.02, 0.3)
+        self.assertEqual(pts[:3], [{"beat": 0.0, "value": -6}, {"beat": 0.02, "value": -12},
+                                   {"beat": 0.32, "value": -6}])
+        beats = [p["beat"] for p in pts]
+        self.assertEqual(beats, sorted(beats))
+        self.assertEqual(min(p["value"] for p in pts), -12)
+
+
 class Chains(unittest.TestCase):
     def test_hz(self):
         self.assertEqual(sound.hz(250), "250 Hz")

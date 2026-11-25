@@ -188,3 +188,45 @@ def load_sound(a, wait):
     res = live.offline_edit(path, lambda p: presets.load_preset(p, track, a["preset"]))
     out.update(res)
     return out
+
+
+# ---- ducking ------------------------------------------------------------------------------------------------
+
+def duck_points(hits, base_db, depth_db, attack, release):
+    """Volume points: down by depth_db at each hit (reached after attack beats), back to base after release."""
+    pts = []
+    for h in sorted(set(round(x, 6) for x in hits)):
+        pts += [(h - 0.005, base_db), (h + attack, base_db - depth_db), (h + attack + release, base_db)]
+    out = []
+    for b, v in sorted(pts):
+        if out and b <= out[-1][0] + 1e-4:
+            out[-1] = (out[-1][0], min(out[-1][1], v))  # overlapping dips: keep the deeper point
+            continue
+        out.append((b, v))
+    return [{"beat": round(max(b, 0.0), 4), "value": round(v, 2)} for b, v in out]
+
+
+def duck(a, wait):
+    """daw_duck: the target's volume dips on every trigger note (kick), like a sidechain compressor."""
+    from . import automation, mixfix
+    r = live.bridge("read_notes", {"track": a["trigger_track"]}, wait)
+    pitches = a.get("pitches") or [36, 35]
+    hits = sorted(p["start"] + n["start"] for p in r.get("parts", []) if not p.get("muted")
+                  for n in p["notes"] if n["pitch"] in pitches and not n.get("muted"))
+    if a.get("start_bar") or a.get("end_bar"):
+        from .compose import beats_per_bar
+        per_bar = beats_per_bar(wait)
+        lo = (a.get("start_bar", 1) - 1) * per_bar
+        hi = (a["end_bar"] - 1) * per_bar if a.get("end_bar") else float("inf")
+        hits = [h for h in hits if lo <= h < hi]
+    if not hits:
+        raise ToolError("no trigger notes (pitches %s) on %s" % (pitches, a["trigger_track"]))
+    vol, _hint = mixfix._channel_volume(a["track"], wait)
+    base = 20 * __import__("math").log10(vol) if vol else 0.0
+    pts = duck_points(hits, base, a.get("depth_db", 6.0), a.get("attack_beats", 0.02), a.get("release_beats", 0.3))
+    path = live.active_song_path()
+    if not path:
+        raise ToolError("save the song once first: automation is written into the song file")
+    res = live.offline_edit(path, lambda p: automation.write_automation(p, a["track"], "volume", pts, True))
+    res.update(hits=len(hits), base_db=round(base, 1), depth_db=a.get("depth_db", 6.0), points=len(pts))
+    return res

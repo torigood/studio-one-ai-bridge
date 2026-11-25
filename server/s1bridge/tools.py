@@ -404,6 +404,7 @@ HANDLERS = {
     "daw_snapshot": _daw_snapshot,
     "daw_apply_chain": lambda a: sound.apply_chain(a, a.get("wait")),
     "daw_load_sound": lambda a: sound.load_sound(a, a.get("wait")),
+    "daw_duck": lambda a: sound.duck(a, a.get("wait")),
     "daw_mix_fix": lambda a: mixfix.mix_fix(a, a.get("wait") or 60),
     "daw_mix_check": lambda a: analysis_tools.daw_mix_check(a.get("tracks"), a.get("files"), a.get("wait") or 60),
 

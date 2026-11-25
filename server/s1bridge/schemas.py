@@ -425,6 +425,13 @@ TOOLS = [
                     "the song is saved, closed and reopened for the preset (~8 s).",
      "inputSchema": _schema({"plugin": _S, "preset": _S, "track": _TRACK, "name": _S, "wait": _WAIT},
                             ["plugin", "preset"])},
+    {"name": "daw_duck",
+     "description": "Sidechain-style ducking: track's volume dips by depth_db (default 6) on every trigger note of "
+                    "trigger_track (default pitches 36/35 = kick), back after release_beats (default 0.3). Written as "
+                    "volume automation (song reopens once); start_bar/end_bar limit it.",
+     "inputSchema": _schema({"track": _TRACK, "trigger_track": _TRACK, "pitches": {"type": "array", "items": _I},
+                             "depth_db": _N, "attack_beats": _N, "release_beats": _N, "start_bar": _I, "end_bar": _I,
+                             "wait": _WAIT}, ["track", "trigger_track"])},
     {"name": "daw_snapshot",
      "description": "Snapshots of the open song (or path) to undo a run of edits in one step. action take (label "
                     "optional; take one before larger changes), list, restore (snapshot id or label, default the "
