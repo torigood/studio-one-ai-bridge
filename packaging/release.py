@@ -83,7 +83,8 @@ def main(argv=None):
     if not a.publish:
         print("not published (pass --publish); version files now say %s" % version)
         return 0
-    if subprocess.run(["git", "diff", "--quiet", "--", VERSION_FILE, PYPROJECT], cwd=ROOT).returncode:
+    if subprocess.run(["git", "status", "--porcelain", "--", VERSION_FILE, PYPROJECT], cwd=ROOT,
+                      capture_output=True, text=True).stdout.strip():
         _run(["git", "add", VERSION_FILE, PYPROJECT])
         _run(["git", "commit", "-m", "Release %s" % version])
     _run(["git", "push"])
