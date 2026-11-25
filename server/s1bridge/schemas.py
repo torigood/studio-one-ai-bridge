@@ -61,6 +61,11 @@ TOOLS = [
      "description": "Preset files of an instrument by plug-in name (e.g. 'Mai Tai', 'Mojito'), filtered by words in "
                     "name or folder (e.g. 'warm pad'); for song_load_preset.",
      "inputSchema": _schema({"plugin": _S, "query": _S, "limit": _I}, ["plugin"])},
+    {"name": "library_sounds",
+     "description": "Find sounds across every installed instrument by words (e.g. 'warm pad', 'sub bass', 'pluck'): "
+                    "preset name, folder and style (Vital presets carry one), with synonyms; best first. Load one "
+                    "with daw_load_sound. plugin limits it to one instrument.",
+     "inputSchema": _schema({"query": _S, "plugin": _S, "limit": _I}, ["query"])},
     {"name": "library_plugin_params",
      "description": "Parameters of a plug-in for daw_plugin_param. Native (Pro EQ, Room Reverb, Mojito...): IDs and "
                     "ranges from factory presets, plus preset names. VST3 (Vital, Surge XT...): 'vstp<id>' with titles, "
@@ -135,8 +140,9 @@ TOOLS = [
                              "copy": {"type": "boolean"}}, ["path", "track", "file", "start_beats"])},
     {"name": "song_load_preset",
      "description": "Load a preset into the instrument a track plays (name or file path from library_presets): "
-                    "Studio One instruments (Mai Tai, Mojito, Impact, SampleOne) and .vstpreset/.aupreset files. "
-                    "Presets inside a plug-in's own browser (Vital, BBC SO) cannot be loaded this way.",
+                    "Studio One instruments (Mai Tai, Mojito, Impact, SampleOne), Vital .vital presets and "
+                    ".vstpreset/.aupreset files. Presets inside other plug-ins' own browsers (Surge XT, BBC SO) "
+                    "cannot be loaded this way.",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK, "preset": _S}, ["path", "track", "preset"])},
     {"name": "song_add_send",
      "description": "Add a send from a track or mixer channel to an EXISTING FX channel or bus (destination = its label, "
@@ -403,6 +409,22 @@ TOOLS = [
                     "Markers, chords, tempo and automation are not shifted.",
      "inputSchema": _schema({"at_bar": _I, "bars": _I, "tracks": {"type": "array", "items": _TRACK},
                              "split": {"type": "boolean"}, "wait": _WAIT}, ["at_bar", "bars"])},
+    {"name": "daw_apply_chain",
+     "description": "Put a ready effect chain on a track (Studio One effects, parameters set): role vocal, bass, pad, "
+                    "keys, lead, pluck, drums, guitar, strings, loud (limiter). Inserts go on the track's channel; "
+                    "reverb/delay sends go to a shared Room Reverb / Analog Delay FX channel (created the first time, "
+                    "later sends are written into the song file with one reopen). chains [{track, role, sends?}] does "
+                    "several tracks in one call. Tune afterwards with daw_plugin_param.",
+     "inputSchema": _schema({"track": _TRACK, "role": _S,
+                             "chains": {"type": "array", "items": _schema(
+                                 {"track": _TRACK, "role": _S, "sends": {"type": "boolean"}}, ["track", "role"])},
+                             "wait": _WAIT})},
+    {"name": "daw_load_sound",
+     "description": "Add an instrument track playing plugin with preset (from library_sounds) in one step, or load the "
+                    "preset into track. Vital .vital presets, Studio One presets and .vstpreset/.aupreset files load; "
+                    "the song is saved, closed and reopened for the preset (~8 s).",
+     "inputSchema": _schema({"plugin": _S, "preset": _S, "track": _TRACK, "name": _S, "wait": _WAIT},
+                            ["plugin", "preset"])},
     {"name": "daw_snapshot",
      "description": "Snapshots of the open song (or path) to undo a run of edits in one step. action take (label "
                     "optional; take one before larger changes), list, restore (snapshot id or label, default the "

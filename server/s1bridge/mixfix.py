@@ -10,7 +10,7 @@ A snapshot is taken first (daw_snapshot restore undoes everything). apply=false 
 import math
 import re
 
-from . import analysis_tools, live, snapshots
+from . import analysis_tools, live, snapshots, sound
 from .common import ToolError
 
 PRO_EQ = "{073C4094-E062-4FB5-8328-74608DD1A3A4}"
@@ -89,7 +89,7 @@ def _apply(step, wait):
         if eq is None:
             raise ToolError("could not insert Pro EQ on %s: %s" % (t, fx))
     slot, band = eq["slot"], step["band"]
-    for param, display in ((band + "active", "1"), (band + "freq", "%g Hz" % step["freq_hz"]),
+    for param, display in ((band + "active", "1"), (band + "freq", sound.hz(step["freq_hz"])),
                            (band + "gain", "%g" % step["db"]), (band + "q", "1.4")):
         live.bridge("plugin_param", dict(_fx_args(t, wait), slot=slot, param=param, display=display), wait)
     return {"eq_slot": slot}

@@ -333,6 +333,8 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_write_drums` | Drum parts by genre (pop, rock, ballad, funk, house, trap, lofi, reggaeton, dnb, rnb) or a custom step groove, with fills and crashes (GM drum map) |
 | `daw_insert_bars` | Make room mid-song: move later events right, split instrument parts that cross the point |
 | `daw_mix_fix` | Level the stems (balance kept) and cut overlaps with Pro EQ, then check again (snapshot first) |
+| `library_sounds`, `daw_load_sound` | Find a sound across all instruments by words ("warm pad"), add an instrument track with it in one step (Vital `.vital` presets load too) |
+| `daw_apply_chain` | Ready effect chains by role (vocal, bass, pad, keys, lead, pluck, drums, guitar, strings, loud) with shared reverb/delay sends |
 | `audio_mix_check`, `daw_mix_check` | Loudness (LUFS), stereo, octave bands and masking between stems (bounces instrument tracks) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
 | `daw_set_loop` | Loop range by bars or beats, loop on/off |

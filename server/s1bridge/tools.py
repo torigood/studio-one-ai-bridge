@@ -14,7 +14,8 @@ import os
 import sys
 
 from . import (analysis_tools, automation, chords, clients, compose, config, drums, editing, effects, library, live,
-               loops, midi, mixer, mixfix, presets, setup, snapshots, songwrite, vst3params)
+               loops, midi, mixer, mixfix, presets, setup, snapshots, songwrite, sound,
+               vst3params)
 from .common import ToolError, find_track, song_path
 from .mailbox import Mailbox
 from .schemas import DEV_TOOLS, REMOTE_HIDDEN, TOOLS, listed_tools
@@ -326,6 +327,7 @@ HANDLERS = {
     "library_loops": _library_loops,
     "library_presets": lambda a: presets.find(a["plugin"], a.get("query", ""), a.get("limit", 60)),
     "library_plugin_params": _library_plugin_params,
+    "library_sounds": lambda a: sound.find_sounds(a["query"], a.get("plugin"), a.get("limit", 20)),
     "commands_search": _commands_search,
 
     # offline: write the saved song (saved, closed and reopened when it is open)
@@ -400,6 +402,8 @@ HANDLERS = {
     "daw_copy_bars": lambda a: compose.copy_bars(a, a.get("wait")),
     "daw_insert_bars": lambda a: compose.insert_bars(a, a.get("wait")),
     "daw_snapshot": _daw_snapshot,
+    "daw_apply_chain": lambda a: sound.apply_chain(a, a.get("wait")),
+    "daw_load_sound": lambda a: sound.load_sound(a, a.get("wait")),
     "daw_mix_fix": lambda a: mixfix.mix_fix(a, a.get("wait") or 60),
     "daw_mix_check": lambda a: analysis_tools.daw_mix_check(a.get("tracks"), a.get("files"), a.get("wait") or 60),
 
