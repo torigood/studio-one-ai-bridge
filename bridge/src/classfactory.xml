@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ClassFactory>
-	<Version name="AI Bridge" version="0.8.0" vendor="local"/>
+	<Version name="AI Bridge" version="0.9.0" vendor="local"/>
 
 	<!-- Loaded at startup (same category as the Macro Manager service).
 	     Writes status.json; cannot edit the song (no edit context). -->
@@ -24,5 +24,16 @@
 		sourceFile="tasks.js"
 		functionName="createRunJobsTask">
 		<Attribute id="menuPriority" value="100"/>
+	</ScriptClass>
+
+	<!-- Opens the AI chat page (served by `run.py chat`) in the browser; URL from the mailbox. -->
+	<ScriptClass
+		classID="{6C1E2B4A-9D3F-4E8B-A7C5-1F0D2E3B4C5A}"
+		category="EditTask"
+		subCategory="TrackEdit"
+		name="AI Bridge - Open Chat"
+		sourceFile="tasks.js"
+		functionName="createOpenChatTask">
+		<Attribute id="menuPriority" value="101"/>
 	</ScriptClass>
 </ClassFactory>

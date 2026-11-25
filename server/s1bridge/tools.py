@@ -60,6 +60,91 @@ def _with_instrument_channel(args, wait):
     return args
 
 
+WRITERS = {
+    "song_write_cc": lambda p, a: (songwrite.write_cc(
+        p, a["track"], a["cc"], a["points"], a.get("part"), a.get("replace", True), a.get("step", False))),
+    "song_add_loop": lambda p, a: (loops.add_loop(
+        p, a["track"], a["loop"], a["start_beats"], a.get("length_beats"))),
+    "song_add_audio": lambda p, a: (loops.add_audio_file(
+        p, a["track"], a["file"], a["start_beats"], a.get("copy", True))),
+    "song_write_automation": lambda p, a: (automation.write_automation(
+        p, a["track"], a["param"], a["points"], a.get("replace", True))),
+    "song_write_plugin_automation": lambda p, a: (automation.write_plugin_automation(
+        p, a["track"], a["param"], a["points"], a.get("instrument", False), a.get("slot"), a.get("plugin"),
+        a.get("title"), a.get("replace", True))),
+    "song_set_tempo_map": lambda p, a: (songwrite.write_tempo_map(p, a["changes"])),
+    "song_set_time_signatures": lambda p, a: (songwrite.write_time_signatures(p, a["signatures"])),
+    "song_write_markers": lambda p, a: (songwrite.write_markers(p, a["markers"], a.get("replace", True))),
+    "song_write_sections": lambda p, a: (songwrite.write_sections(p, a["sections"], a.get("replace", True))),
+    "song_write_chords": lambda p, a: (chords.write_chords(p, a["chords"], a.get("replace", True))),
+    "song_load_preset": lambda p, a: (presets.load_preset(p, a["track"], a["preset"])),
+    "song_add_send": lambda p, a: effects.add_send(
+        p, a["destination"], track=a.get("track"), mixer_channel=a.get("mixer_channel"),
+        level_db=a.get("level_db", -6.0), pan=a.get("pan", 0.0), prefader=a.get("prefader", False)),
+    "song_remove_effect": lambda p, a: effects.remove_effect(
+        p, a.get("track"), a.get("mixer_channel"), a.get("slot"), a.get("plugin")),
+}
+
+
+def _song_batch(a):
+    """Several song_* edits with one save / close / reopen."""
+    edits = a.get("edits") or []
+    bad = [e.get("tool") for e in edits if e.get("tool") not in WRITERS]
+    if bad or not edits:
+        raise ToolError("edits must be [{tool, args}] with tool one of %s (got %s)" % (", ".join(sorted(WRITERS)), bad))
+
+    def write(p):
+        done = []
+        for i, e in enumerate(edits):
+            try:
+                done.append({"tool": e["tool"], "result": WRITERS[e["tool"]](p, e.get("args") or {})})
+            except (songwrite.SongWriteError, KeyError, ToolError) as err:
+                msg = "missing argument %s" % err if isinstance(err, KeyError) else str(err)
+                return {"done": done, "failed": {"index": i, "tool": e["tool"], "error": msg},
+                        "note": "edits before the failed one were written; later ones were not"}
+        return {"done": done}
+    return live.offline_edit(song_path(a["path"]), write)
+
+
+# daw_batch: tools that are one bridge op each -> (op, argument names, needs the instrument channel hint)
+BATCHABLE = {
+    "daw_list_tracks": ("list_tracks", (), False), "daw_add_track": ("add_track", ("type", "name"), False),
+    "daw_delete_track": ("delete_track", ("track",), False), "daw_list_events": ("list_events", ("track",), False),
+    "daw_edit_event": ("edit_event", ("track", "start_beats", "index", "move_to", "length", "mute"), False),
+    "daw_delete_event": ("delete_event", ("track", "start_beats", "index", "all"), False),
+    "daw_insert_notes": ("insert_notes", ("track", "start_beats", "length_beats", "notes"), False),
+    "daw_read_notes": ("read_notes", ("track", "part_start"), False),
+    "daw_edit_notes": ("edit_notes", ("track", "part_start", "edits", "add"), False),
+    "daw_read_chords": ("read_chords", (), False), "daw_list_mixer": ("list_mixer", (), False),
+    "daw_list_instruments": ("list_instruments", (), False),
+    "daw_add_instrument": ("add_instrument", ("class_id", "track", "name"), False),
+    "daw_set_channel_param": ("set_channel_param", ("track", "mixer_channel", "param", "value"), True),
+    "daw_insert_effect": ("insert_effect", ("class_id", "track", "mixer_channel"), True),
+    "daw_list_effects": ("list_effects", ("track", "mixer_channel"), True),
+    "daw_plugin_param": ("plugin_param", ("instrument_slot", "track", "mixer_channel", "slot", "param", "display",
+                                          "normalized"), True),
+}
+
+
+def _daw_batch(a):
+    calls = a.get("calls") or []
+    bad = [c.get("tool") for c in calls if c.get("tool") not in BATCHABLE]
+    if bad or not calls:
+        raise ToolError("calls must be [{tool, args}] with tool one of %s (got %s)" % (", ".join(sorted(BATCHABLE)), bad))
+    jobs, hints = [], {}
+    for c in calls:
+        op, keys, hint = BATCHABLE[c["tool"]]
+        args = _pick(c.get("args") or {}, *keys)
+        if hint and "track" in args and "mixer_channel" not in args:
+            if args["track"] not in hints:
+                hints[args["track"]] = live.instrument_channel_hint(args["track"], a.get("wait"))
+            if hints[args["track"]]:
+                args["instrument_channel"] = hints[args["track"]]
+        jobs.append((op, args))
+    res = live.batch(jobs, a.get("wait"))
+    return {"results": [dict(r, tool=c["tool"]) for c, r in zip(calls, res)]}
+
+
 def _offline(write):
     """Handler for a tool that edits the saved song a["path"]: write(path, a)."""
     return lambda a: live.offline_edit(song_path(a["path"]), lambda p: write(p, a))
@@ -330,25 +415,20 @@ HANDLERS = {
     "library_sounds": lambda a: sound.find_sounds(a["query"], a.get("plugin"), a.get("limit", 20)),
     "commands_search": _commands_search,
 
-    # offline: write the saved song (saved, closed and reopened when it is open)
-    "song_write_cc": _offline(lambda p, a: songwrite.write_cc(
-        p, a["track"], a["cc"], a["points"], a.get("part"), a.get("replace", True), a.get("step", False))),
-    "song_add_loop": _offline(lambda p, a: loops.add_loop(
-        p, a["track"], a["loop"], a["start_beats"], a.get("length_beats"))),
-    "song_add_audio": _offline(lambda p, a: loops.add_audio_file(
-        p, a["track"], a["file"], a["start_beats"], a.get("copy", True))),
-    "song_write_automation": _offline(lambda p, a: automation.write_automation(
-        p, a["track"], a["param"], a["points"], a.get("replace", True))),
-    "song_write_plugin_automation": _offline(lambda p, a: automation.write_plugin_automation(
-        p, a["track"], a["param"], a["points"], a.get("instrument", False), a.get("slot"), a.get("plugin"),
-        a.get("title"), a.get("replace", True))),
-    "song_set_tempo_map": _offline(lambda p, a: songwrite.write_tempo_map(p, a["changes"])),
-    "song_set_time_signatures": _offline(lambda p, a: songwrite.write_time_signatures(p, a["signatures"])),
-    "song_write_markers": _offline(lambda p, a: songwrite.write_markers(p, a["markers"], a.get("replace", True))),
-    "song_write_sections": _offline(lambda p, a: songwrite.write_sections(p, a["sections"], a.get("replace", True))),
-    "song_write_chords": _offline(lambda p, a: chords.write_chords(p, a["chords"], a.get("replace", True))),
-    "song_load_preset": _offline(lambda p, a: presets.load_preset(p, a["track"], a["preset"])),
+    # offline: write the saved song (saved, closed and reopened when it is open); also song_batch
+    "song_write_cc": _offline(WRITERS["song_write_cc"]),
+    "song_add_loop": _offline(WRITERS["song_add_loop"]),
+    "song_add_audio": _offline(WRITERS["song_add_audio"]),
+    "song_write_automation": _offline(WRITERS["song_write_automation"]),
+    "song_write_plugin_automation": _offline(WRITERS["song_write_plugin_automation"]),
+    "song_set_tempo_map": _offline(WRITERS["song_set_tempo_map"]),
+    "song_set_time_signatures": _offline(WRITERS["song_set_time_signatures"]),
+    "song_write_markers": _offline(WRITERS["song_write_markers"]),
+    "song_write_sections": _offline(WRITERS["song_write_sections"]),
+    "song_write_chords": _offline(WRITERS["song_write_chords"]),
+    "song_load_preset": _offline(WRITERS["song_load_preset"]),
     "song_add_send": _song_add_send,
+    "song_batch": _song_batch,
     "song_remove_effect": _song_remove_effect,
 
     # analysis
@@ -372,6 +452,7 @@ HANDLERS = {
     "daw_set_position": _daw_set_position,
     "daw_set_loop": lambda a: mixer.set_loop(a, a.get("wait")),
     "daw_command": _daw_command,
+    "daw_batch": _daw_batch,
 
     # live: tracks and events
     "daw_list_tracks": _live("list_tracks"),

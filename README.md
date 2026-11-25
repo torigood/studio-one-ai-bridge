@@ -117,6 +117,22 @@ python3 server/run.py share --enable
 The connector URL is then `https://<name>.ngrok-free.app/<secret>/mcp` and stays the same, so the ChatGPT
 connector is set up once. `share --provider cloudflare` switches back.
 
+## Chat page (talk to the AI next to Studio One)
+
+`chat` serves a small chat page on this Mac and answers through an AI command-line agent you are already
+signed in to (Codex or Claude Code), with this bridge as its tools. No API key is stored here.
+
+```bash
+python3 server/run.py chat                 # run now and open the page
+python3 server/run.py chat --enable        # run in the background, also at login
+python3 server/run.py chat --backend codex --model <model>   # or --backend claude
+```
+
+In Studio One, Track > **AI Bridge - Open Chat** opens the page (bridge 0.9.0). One conversation continues
+until **새 대화** (new chat). Codex picks a model your account allows from its own model list; Claude Code needs
+`claude` then `/login` once in Terminal.
+
+
 ## Install from a checkout (any MCP client)
 
 ### 1. Get the code
@@ -336,6 +352,7 @@ This removes the extension, the surface, its device entry and the catalog.
 | `library_sounds`, `daw_load_sound` | Find a sound across all instruments by words ("warm pad"), add an instrument track with it in one step (Vital `.vital` presets load too) |
 | `daw_apply_chain` | Ready effect chains by role (vocal, bass, pad, keys, lead, pluck, drums, guitar, strings, loud) with shared reverb/delay sends |
 | `daw_duck` | Sidechain-style ducking: a track dips on every kick (volume automation) |
+| `daw_batch`, `song_batch` | Several live calls in one bridge job; several song file edits with one reopen |
 | `audio_mix_check`, `daw_mix_check` | Loudness (LUFS), stereo, octave bands and masking between stems (bounces instrument tracks) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
 | `daw_set_loop` | Loop range by bars or beats, loop on/off |

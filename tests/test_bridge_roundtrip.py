@@ -61,6 +61,22 @@ class RoundTrip(unittest.TestCase):
         # results consumed above -> inbox cleaned by Python
         self.assertEqual(os.listdir(os.path.join(self.mb.root, "inbox")), [])
 
+    def test_batch(self):
+        jid = self.mb.enqueue("batch", {"jobs": [
+            {"op": "ping"},
+            {"op": "set_channel_param", "args": {"track": "Nope", "param": "volume", "value": 1}},
+            {"op": "batch", "args": {"jobs": []}},
+            {"op": "set_channel_param", "args": {"track": "Piano", "param": "volume", "value": 0.25}}]})
+        stop = self.mb.enqueue("batch", {"stop_on_error": True, "jobs": [
+            {"op": "nope"}, {"op": "ping"}]})
+        calls = self.run_bridge()
+        r = self.mb.result(jid)["result"]["results"]
+        self.assertEqual([x["ok"] for x in r], [True, False, False, True])
+        self.assertIn("track not found", r[1]["error"])
+        self.assertIn("batch inside batch", r[2]["error"])
+        self.assertIn(["setValue", "Piano", "volume", 0.25], calls)
+        self.assertEqual(len(self.mb.result(stop)["result"]["results"]), 1)
+
     def test_call_and_list_events(self):
         call = self.mb.enqueue("call", {"steps": [
             {"on": {"functions": ""}, "set": "executeImmediately", "value": True},

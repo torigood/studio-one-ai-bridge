@@ -144,6 +144,14 @@ TOOLS = [
                     ".vstpreset/.aupreset files. Presets inside other plug-ins' own browsers (Surge XT, BBC SO) "
                     "cannot be loaded this way.",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK, "preset": _S}, ["path", "track", "preset"])},
+    {"name": "song_batch",
+     "description": "Several song_* edits of one song with ONE save/close/reopen (instead of ~8 s each): edits "
+                    "[{tool, args}] with tool song_write_cc, song_write_chords, song_write_markers, song_write_sections, "
+                    "song_write_automation, song_write_plugin_automation, song_set_tempo_map, song_set_time_signatures, "
+                    "song_add_loop, song_add_audio, song_add_send, song_load_preset, song_remove_effect; args as for "
+                    "that tool without path. Stops at the first failing edit.",
+     "inputSchema": _schema({"path": _SONG, "edits": {"type": "array", "items": _schema(
+         {"tool": _S, "args": {"type": "object"}}, ["tool"])}}, ["path", "edits"])},
     {"name": "song_add_send",
      "description": "Add a send from a track or mixer channel to an EXISTING FX channel or bus (destination = its label, "
                     "e.g. 'Room Reverb'), so tracks share one reverb. level_db (default -6), pan -1..1, prefader.",
@@ -256,6 +264,14 @@ TOOLS = [
      "description": "Bridge status: whether the Studio One bridge has loaded, jobs still waiting, and whether the "
                     "installed bridge matches this server (problem says what to do if not).",
      "inputSchema": _schema({})},
+    {"name": "daw_batch",
+     "description": "Several live calls in one bridge job (much faster than one by one): calls [{tool, args}] with tool "
+                    "daw_list_tracks, daw_add_track, daw_delete_track, daw_list_events, daw_edit_event, daw_delete_event, "
+                    "daw_insert_notes, daw_read_notes, daw_edit_notes, daw_read_chords, daw_list_mixer, "
+                    "daw_list_instruments, daw_add_instrument, daw_set_channel_param, daw_insert_effect, "
+                    "daw_list_effects, daw_plugin_param. Results in order, each ok/result or error.",
+     "inputSchema": _schema({"calls": {"type": "array", "items": _schema(
+         {"tool": _S, "args": {"type": "object"}}, ["tool"])}, "wait": _WAIT}, ["calls"])},
     {"name": "daw_set_loop",
      "description": "Set the loop range and turn looping on or off. start_bar/end_bar 1-based, end exclusive (5 to 9 "
                     "loops bars 5-8); with time signature changes pass start_beat/end_beat. No range: only switch "

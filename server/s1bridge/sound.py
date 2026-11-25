@@ -67,10 +67,11 @@ def _fx_args(track, wait):
 
 
 def _set(args, slot, params, wait):
+    names = list(params)
+    res = live.batch([("plugin_param", dict(args, slot=slot, param=p, display=params[p])) for p in names], wait)
     done = {}
-    for p, v in params.items():
-        r = live.bridge("plugin_param", dict(args, slot=slot, param=p, display=v), wait)
-        done[p] = r.get("display") if isinstance(r, dict) else r
+    for p, r in zip(names, res):
+        done[p] = (r.get("result") or {}).get("display") if r.get("ok") else "error: %s" % r.get("error")
     return done
 
 

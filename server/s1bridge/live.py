@@ -56,6 +56,31 @@ def bridge(op, args, wait):
     return r.get("result")
 
 
+def batch(jobs, wait):
+    """Run [(op, args)] as one bridge job (bridge 0.9.0+: one MIDI trigger, one edit task); with an older
+    bridge, one job each. Returns [{ok, result} | {ok: False, error}] in order."""
+    if not jobs:
+        return []
+    try:
+        r = bridge("batch", {"jobs": [{"op": op, "args": args} for op, args in jobs]},
+                   max(wait or 10, 10 + len(jobs) // 10))
+    except ToolError as e:
+        if "unknown op: batch" not in str(e):
+            raise
+        r = None
+    if isinstance(r, dict) and "results" in r:
+        return r["results"]
+    if isinstance(r, dict) and r.get("status") == "not_run":
+        raise ToolError("the bridge did not answer; is Studio One running with a song open?")
+    out = []
+    for op, args in jobs:  # bridge before 0.9.0
+        try:
+            out.append({"ok": True, "result": bridge(op, args, wait)})
+        except ToolError as e:
+            out.append({"ok": False, "error": str(e)})
+    return out
+
+
 def call_steps(steps, wait, what):
     """Run steps through the bridge's call op; raise on the first failing step."""
     r = bridge("call", {"steps": steps}, wait)

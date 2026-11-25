@@ -4,7 +4,7 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.8.0";
+const kBridgeVersion = "0.9.0";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -1150,6 +1150,26 @@ Ops.dump_host = function (context, args)
 	let dump = dumpObject (Host, "Host", args && args.depth ? args.depth : 3);
 	writeJson (null, "host-api.json", dump);
 	return { written: "host-api.json" };
+};
+
+// Several ops in one job (one MIDI trigger, one edit task): args.jobs [{op, args}]. Each result is
+// {ok, result} or {ok: false, error}; stop_on_error ends the batch at the first error.
+Ops.batch = function (context, args)
+{
+	let out = [];
+	for(let j of (args.jobs || []))
+	{
+		if(j.op === "batch")
+		{
+			out.push ({ ok: false, error: "batch inside batch" });
+			continue;
+		}
+		let r = runJob (context, j);
+		out.push (r);
+		if(!r.ok && args.stop_on_error)
+			break;
+	}
+	return { results: out };
 };
 
 function runJob (context, job)

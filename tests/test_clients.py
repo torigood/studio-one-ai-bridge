@@ -100,9 +100,9 @@ class ClientTests(unittest.TestCase):
                 self.assertEqual(clients.server_command(), ["/bin/sh", os.path.join(root, "bin", "start.sh")])
 
     def test_command_runs_from_any_folder(self):
-        """Paths with spaces (e.g. "2. 코딩") come out quoted and absolute, so the line can be pasted as is."""
+        """Paths with spaces and non-ASCII names (e.g. "내 코드") come out quoted and absolute, so the line can be pasted as is."""
         import shlex
-        root = "/Users/x/2. 코딩/studio-one-ai-bridge"
+        root = "/Users/x/내 코드/studio-one-ai-bridge"
         with mock.patch.object(clients.config, "PROJECT_ROOT", root), \
                 mock.patch.object(clients.sys, "executable", "/usr/bin/python3"):
             cmd = clients.command("setup", "--apply")

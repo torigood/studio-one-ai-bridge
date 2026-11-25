@@ -3,6 +3,7 @@
 Run:  python3 -m s1bridge          (from the server/ directory)
       python3 -m s1bridge setup|doctor|uninstall   install / check the Studio One side (setup.py)
       python3 -m s1bridge connect <app> [--apply]  register with another AI app (clients.py)
+      python3 -m s1bridge chat                     chat page that drives Studio One through claude/codex (chat.py)
       python3 -m s1bridge share                    share over HTTPS for the ChatGPT chat app (share.py)
 """
 import json
@@ -104,6 +105,9 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "share":
         from . import share
         sys.exit(share.cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "chat":
+        from . import chat
+        sys.exit(chat.cli(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "analysis-setup":
         from . import analysis_pack
         sys.exit(analysis_pack.cli(sys.argv[2:]))

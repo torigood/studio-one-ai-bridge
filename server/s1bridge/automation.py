@@ -1,6 +1,6 @@
 """Write mixer automation (volume, pan, mute envelopes) into a saved .song. Standard library only.
 
-Format (observed in the user's songs, 2026-10-18):
+Format (observed in real songs, 2026-10-18):
   Song/song.xml, inside the track's MediaTrack:
     <Attributes x:id="AutomationRegionList" visible="0">
       <AutomationRegion title="Volume" identity="param:///AudioMixer/{channel uid}/volume"
