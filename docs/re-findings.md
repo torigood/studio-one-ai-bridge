@@ -207,3 +207,6 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
   `stdin=DEVNULL`); an MCP server registered under another name without `default_tools_approval_mode="approve"` gets its
   calls cancelled ("user cancelled MCP tool call"), so the chat overrides the registered `studio-one` entry. A ChatGPT
   account accepts only the models in `~/.codex/models_cache.json`.
+- [O] **Bridge 0.9.0 live**: `batch` ran 5 ops (one failing on purpose) in one job, 0.7 s round trip. A second
+  `EditTask` class ("AI Bridge - Open Chat", same declaration as Run Jobs) loaded fine; `Host.GUI.openUrl(Host.Url(
+  "http://127.0.0.1:<port>/..."))` ran without error from it (bridge log "opened chat"; opens the default browser).

@@ -33,7 +33,7 @@ function RunJobsTask ()
 //************************************************************************************************
 // OpenChatTask - opens the AI chat page in the browser. The chat agent (run.py chat) writes its URL to
 // <mailbox>/chat_url.txt. Host.GUI.openUrl is used by Studio One's Macro panel with a file URL
-// (re/extracted/macros/panel.js:916); an http URL is UNVERIFIED.
+// (re/extracted/macros/panel.js:916); an http URL works too (0.9.0 live, 2026-11-25).
 //************************************************************************************************
 
 function OpenChatTask ()
