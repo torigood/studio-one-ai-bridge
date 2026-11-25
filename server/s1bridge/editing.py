@@ -27,27 +27,34 @@ def bounce(track, part_start, keep, analyze, wait):
         raise ToolError("could not select the parts: %s" % r)
     t0 = time.time() - 1
     live.bridge("command", {"category": "Event", "name": "Bounce To New Track"}, wait or 60)
-    wav = None
+    # Observed 2026-11-25: one WAV per bounced part (<track>.wav, <track>(2).wav ...); wait for all of them.
+    wavs = []
     for _ in range(60):
-        hits = [p for p in glob.glob(os.path.join(config.SONGS_ROOT, "**", "Bounces", "*.wav"), recursive=True)
-                if os.path.getmtime(p) >= t0]
-        if hits:
-            wav = max(hits, key=os.path.getmtime)
-            size = os.path.getsize(wav)
+        hits = sorted((p for p in glob.glob(os.path.join(config.SONGS_ROOT, "**", "Bounces", "*.wav"), recursive=True)
+                       if os.path.getmtime(p) >= t0), key=os.path.getmtime)
+        if len(hits) >= len(events):
+            sizes = [os.path.getsize(p) for p in hits]
             time.sleep(0.5)
-            if os.path.getsize(wav) == size:
+            if [os.path.getsize(p) for p in hits] == sizes:
+                wavs = hits
                 break
         time.sleep(0.5)
+    else:
+        wavs = hits
+    wav = wavs[0] if wavs else None
     tracks_after = live.bridge("list_tracks", {}, wait)["tracks"]
     new_index = len(tracks_after) - 1 if len(tracks_after) > len(tracks_before) else None
     if len(tracks_after) > len(tracks_before):
-        # the new track is the one whose (index, name) pair is not in the old list after shifting
+        # the new track is the one whose (index, name) pair is not in the old list after shifting.
+        # Folder tracks have no mediaType (list_tracks leaves it out), hence .get.
         old = [t["name"] for t in tracks_before]
         for i, t in enumerate(tracks_after):
-            if i >= len(old) or t["name"] != old[i] or t["mediaType"] != tracks_before[i]["mediaType"]:
+            if i >= len(old) or t["name"] != old[i] or t.get("mediaType") != tracks_before[i].get("mediaType"):
                 new_index = i
                 break
     out = {"track": track, "parts": [e["start"] for e in events], "wav": wav}
+    if len(wavs) > 1:
+        out["wavs"] = wavs  # one per part, in bounce order
     if analyze and wav:
         out["analysis"] = analysis_tools.audio_analyze(wav)
     if not keep and new_index is not None:
@@ -128,8 +135,8 @@ def duplicate_track(track, name, copy_events, wait):
     after = live.list_tracks(wait)
     if len(after) != len(before) + 1:
         raise ToolError("expected one new track, found %d" % (len(after) - len(before)))
-    old = [(t["name"], t["mediaType"]) for t in before]
-    new = next(t for i, t in enumerate(after) if i >= len(old) or (t["name"], t["mediaType"]) != old[i])
+    old = [(t["name"], t.get("mediaType")) for t in before]  # folder tracks have no mediaType
+    new = next(t for i, t in enumerate(after) if i >= len(old) or (t["name"], t.get("mediaType")) != old[i])
     src_i = src["index"] + (1 if new["index"] <= src["index"] else 0)
     warnings = []
     for e in events:

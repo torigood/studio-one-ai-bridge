@@ -164,6 +164,19 @@ TOOLS = [
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
      "inputSchema": _schema({"path": _S, "start_sec": _N, "length_sec": _N}, ["path"])},
+    {"name": "audio_mix_check",
+     "description": "Mix check of WAV files [{path, name?}]: loudness (LUFS integrated, peak, PLR), stereo "
+                    "(correlation, side vs mid dB), octave band levels (dB from the loudest band) and tilt; with "
+                    "several stems, masking = octave bands where two stems are both strong and within 6 dB. "
+                    "Needs the analysis pack.",
+     "inputSchema": _schema({"files": {"type": "array", "items": _schema({"path": _S, "name": _S}, ["path"])}},
+                            ["files"])},
+    {"name": "daw_mix_check",
+     "description": "audio_mix_check on instrument tracks of the open song: each is bounced (the bounced track is "
+                    "removed again, the WAV stays in Bounces) and checked together with any files (e.g. vocal WAVs).",
+     "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK},
+                             "files": {"type": "array", "items": _schema({"path": _S, "name": _S}, ["path"])},
+                             "wait": _WAIT})},
     {"name": "audio_melody",
      "description": "Melody notes of a single voice or instrument in audio (neural pitch tracker): bar, pos (beat in "
                     "bar), beat, len, note, conf; cents = how far off pitch it was sung; 'unsure' = loud spans with "
@@ -325,6 +338,46 @@ TOOLS = [
                              "add": {"type": "array", "items": _schema(
                                  {"pitch": _I, "start": _N, "length": _N, "velocity": _N}, ["pitch", "start", "length"])},
                              "wait": _WAIT}, ["track", "part_start"])},
+    {"name": "daw_write_pattern",
+     "description": "Write a part generated from chords onto an instrument track. style: bass (pattern root/"
+                    "root_fifth/octave/walk), pad (voice-led held chords), arp (direction up/down/updown/random), "
+                    "stabs (short chords). Chords from chords [{beat, length, chord}], or progression 'Am F C G' "
+                    "('%' holds the last chord) from start_bar with bars_per_chord and repeat, or else the Chord "
+                    "Track (start_bar/end_bar limit it). rate = note spacing in quarter notes (0.5 = 8ths); octave "
+                    "= register (bass 2, others 4); velocity 0..1; gate = note length share; humanize 0..1; "
+                    "seed makes random choices repeatable. replace deletes parts inside the range first.",
+     "inputSchema": _schema({
+         "track": _TRACK, "style": {"type": "string", "enum": ["bass", "pad", "arp", "stabs"]},
+         "chords": {"type": "array", "items": _schema({"beat": _N, "length": _N, "chord": _S},
+                                                      ["beat", "length", "chord"])},
+         "progression": _S, "start_bar": _I, "end_bar": _I, "bars_per_chord": _N, "repeat": _I,
+         "pattern": {"type": "string", "enum": ["root", "root_fifth", "octave", "walk"]},
+         "direction": {"type": "string", "enum": ["up", "down", "updown", "random"]},
+         "rate": _N, "octave": _I, "voices": _I, "velocity": _N, "gate": _N, "accent": _N, "humanize": _N,
+         "seed": _I, "replace": {"type": "boolean"}, "wait": _WAIT}, ["track", "style"])},
+    {"name": "daw_transform_notes",
+     "description": "Change the notes of a track's parts (all, or the part at part_start): quantize (grid in quarter "
+                    "notes, strength 0..1), swing 50..75 (66 = triplet feel) on swing_grid (0.5 = 8ths), humanize "
+                    "0..1 (timing and velocity), transpose semitones, velocity_scale / velocity_add. pitch_min/"
+                    "pitch_max limit it to a range (e.g. only the hi-hat).",
+     "inputSchema": _schema({"track": _TRACK, "part_start": _N, "quantize": _N, "strength": _N, "swing": _N,
+                             "swing_grid": _N, "humanize": _N, "transpose": _I, "velocity_scale": _N,
+                             "velocity_add": _N, "pitch_min": _I, "pitch_max": _I, "seed": _I, "wait": _WAIT},
+                            ["track"])},
+    {"name": "daw_copy_bars",
+     "description": "Copy the notes of instrument tracks in bars from_bar..to_bar (end exclusive) to dest_bar, as new "
+                    "parts (e.g. verse to the second verse). tracks limits it (default: every instrument track). "
+                    "Audio tracks are not copied. replace deletes parts inside the destination first.",
+     "inputSchema": _schema({"from_bar": _I, "to_bar": _I, "dest_bar": _I,
+                             "tracks": {"type": "array", "items": _TRACK}, "replace": {"type": "boolean"},
+                             "wait": _WAIT}, ["from_bar", "to_bar", "dest_bar"])},
+    {"name": "daw_snapshot",
+     "description": "Snapshots of the open song (or path) to undo a run of edits in one step. action take (label "
+                    "optional; take one before larger changes), list, restore (snapshot id or label, default the "
+                    "latest; the song is saved, closed, replaced and reopened, the current state is backed up). "
+                    "Audio files are shared, not copied.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["take", "list", "restore"]}, "label": _S,
+                             "snapshot": _S, "path": _SONG}, ["action"])},
     {"name": "daw_read_chords",
      "description": "Chords on the Chord Track of the open song (start, length in beats, name). Write chords with "
                     "song_write_chords.",

@@ -13,8 +13,8 @@ import json
 import os
 import sys
 
-from . import (analysis_tools, automation, chords, clients, config, editing, effects, library, live, loops, midi,
-               mixer, presets, setup, songwrite, vst3params)
+from . import (analysis_tools, automation, chords, clients, compose, config, editing, effects, library, live, loops,
+               midi, mixer, presets, setup, snapshots, songwrite, vst3params)
 from .common import ToolError, find_track, song_path
 from .mailbox import Mailbox
 from .schemas import DEV_TOOLS, REMOTE_HIDDEN, TOOLS, listed_tools
@@ -294,6 +294,22 @@ def _daw_bypass_effect(a):
     return {"slot": a["slot"], "bypass": r.get("raw")} if isinstance(r, dict) and "raw" in r else r
 
 
+def _daw_transform_notes(a):
+    if a.get("swing") is not None and not 50 <= a["swing"] <= 75:
+        raise ToolError("swing must be 50 (straight) .. 75")
+    if a.get("strength") is not None and not 0 <= a["strength"] <= 1:
+        raise ToolError("strength must be 0..1")
+    return compose.transform_notes(a, a.get("wait"))
+
+
+def _daw_snapshot(a):
+    if a["action"] == "take":
+        return snapshots.take(a.get("label"), a.get("path"))
+    if a["action"] == "list":
+        return snapshots.listing(a.get("path"))
+    return snapshots.restore(a.get("snapshot"), a.get("path"))
+
+
 def _daw_transport(a):
     midi.press(midi.CC_PLAY if a["action"] == "play" else midi.CC_STOP)
     return {"sent": a["action"]}
@@ -336,6 +352,7 @@ HANDLERS = {
     # analysis
     "audio_analyze": lambda a: analysis_tools.audio_analyze(a["path"], a.get("start_sec", 0), a.get("length_sec")),
     "audio_melody": lambda a: analysis_tools.audio_melody(a, a.get("wait")),
+    "audio_mix_check": lambda a: analysis_tools.mix_check(a["files"]),
     "song_check_clashes": lambda a: analysis_tools.check_clashes(song_path(a["path"]), a),
 
     # install and sharing
@@ -375,6 +392,13 @@ HANDLERS = {
     "daw_read_notes": _live("read_notes", "track", "part_start"),
     "daw_edit_notes": _live("edit_notes", "track", "part_start", "edits", "add"),
     "daw_read_chords": _live("read_chords"),
+
+    # live: composing (compose.py, built on the note jobs)
+    "daw_write_pattern": lambda a: compose.write_pattern(a, a.get("wait")),
+    "daw_transform_notes": _daw_transform_notes,
+    "daw_copy_bars": lambda a: compose.copy_bars(a, a.get("wait")),
+    "daw_snapshot": _daw_snapshot,
+    "daw_mix_check": lambda a: analysis_tools.daw_mix_check(a.get("tracks"), a.get("files"), a.get("wait") or 60),
 
     # live: mixer and plug-ins
     "daw_list_mixer": _live("list_mixer"),

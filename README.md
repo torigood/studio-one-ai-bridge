@@ -328,6 +328,9 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_rename_track`, `daw_duplicate_track`, `daw_delete_track` | Rename (with its instrument channel), duplicate with all parts/clips, delete |
 | `daw_read_notes`, `daw_edit_notes` | Read the open song's notes; change, add, delete notes |
 | `daw_read_chords`, `song_write_chords` | Chord track (read live, write offline with auto reopen) |
+| `daw_write_pattern`, `daw_transform_notes`, `daw_copy_bars` | Bass/pad/arp/stab parts from chords (voice-led); quantize, swing, humanize, transpose; copy bars to another place |
+| `daw_snapshot` | Take, list and restore snapshots of the open song (undo a run of AI edits in one step) |
+| `audio_mix_check`, `daw_mix_check` | Loudness (LUFS), stereo, octave bands and masking between stems (bounces instrument tracks) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
 | `daw_set_loop` | Loop range by bars or beats, loop on/off |
 | `song_write_markers` | Named song sections (Intro, Verse, Chorus...) in the Marker Track (offline with auto reopen) |

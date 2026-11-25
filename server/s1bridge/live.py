@@ -96,9 +96,10 @@ def wait_for_bridge(seconds):
     return False
 
 
-def active_song_path(wait=None):
+def active_song_path(wait=None, must_exist=True):
     """File path of the song open in Studio One (DocumentManager.activeDocument.path.url), None if unknown
-    (no song open, not saved yet, or the bridge did not answer)."""
+    (no song open, not saved yet, or the bridge did not answer). must_exist=False also returns the path of
+    a new song that has its folder but was never saved."""
     if not os.path.isfile(os.path.join(Mailbox().root, "status.json")):
         return None
     try:
@@ -113,7 +114,7 @@ def active_song_path(wait=None):
     if not url or not url.startswith("file://"):
         return None
     p = urllib.parse.unquote(url[len("file://"):])
-    return p if os.path.isfile(p) else None
+    return p if not must_exist or os.path.isfile(p) else None
 
 
 def open_in_daw(path):
