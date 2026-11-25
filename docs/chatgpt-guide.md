@@ -2,7 +2,7 @@
 
 ChatGPT 채팅(웹, 데스크톱 앱)으로 Studio One을 조작하는 방법입니다. 처음 한 번 15분쯤 걸리고, 그다음부터는 ChatGPT에 말만 하면 됩니다.
 
-> Claude Desktop을 쓴다면 이 문서는 필요 없습니다. `.mcpb`를 더블클릭해서 설치하세요 ([README](../README.md#quick-start-claude-desktop)).
+> Claude Desktop을 쓴다면 이 문서는 필요 없습니다. `.mcpb`를 더블클릭해서 설치하세요 ([README](../README.ko.md#claude-desktop)).
 > ChatGPT에 레포를 주고 "이거 어떻게 설치해?"라고 물어도 됩니다. 이 문서를 기준으로 설명해 달라고 하면 더 정확합니다.
 
 ## 왜 단계가 더 있나
