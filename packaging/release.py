@@ -87,7 +87,15 @@ def main(argv=None):
         _run(["git", "add", VERSION_FILE, PYPROJECT])
         _run(["git", "commit", "-m", "Release %s" % version])
     _run(["git", "push"])
-    notes = ["--notes-file", a.notes] if a.notes else ["--generate-notes"]
+    footer = ("\n\nClaude Desktop: download the .mcpb and double-click it. Without Claude Desktop: `curl -fsSL "
+              "https://raw.githubusercontent.com/torigood/studio-one-ai-bridge/main/install/install.sh | sh`.\n\n"
+              "SHA-256 (%s): `%s`\n" % (os.path.basename(bundle), sha))
+    if a.notes:
+        with open(a.notes, encoding="utf-8") as f:
+            body = f.read().rstrip()
+        notes = ["--notes", body + footer]
+    else:
+        notes = ["--generate-notes", "--notes", footer.strip()]
     _run(["gh", "release", "create", "v" + version, bundle, "--title", "Studio One AI Bridge %s" % version,
           "--target", "main"] + notes)
     return 0
