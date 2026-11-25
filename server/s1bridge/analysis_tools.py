@@ -290,7 +290,7 @@ def song_analyze(path, audio=True):
     return out
 
 
-def mix_check(files):
+def mix_check(files, eqs=None):
     """audio_mix_check: files [{name?, path}] -> mix_analysis result (loudness, stereo, octave bands, masking).
     Files with the same name are analysed as one stem (the parts of a bounced track)."""
     args = []
@@ -302,11 +302,13 @@ def mix_check(files):
         args.append("%s=%s" % (name.replace("=", "-"), path))
     if not args:
         raise ToolError("no files")
+    for name, bands in (eqs or {}).items():
+        args += ["eq:%s=%g,%g,%g" % (str(name).replace("=", "-"), f, g, q) for f, g, q in bands]
     # not cached: a re-bounce writes the same file names
     return run_analysis("mix_analysis", args, timeout=300, cache=False)
 
 
-def daw_mix_check(tracks, files, wait):
+def daw_mix_check(tracks, files, wait, eqs=None):
     """daw_mix_check: bounce instrument tracks (bounced track removed again), add WAV files, check all."""
     from . import editing
     items, bounced = [], []
@@ -319,6 +321,9 @@ def daw_mix_check(tracks, files, wait):
     items += list(files or [])
     if not items:
         raise ToolError("pass tracks (instrument tracks to bounce) and/or files (WAVs)")
-    out = mix_check(items)
+    out = mix_check(items, eqs)
     out["bounced"] = bounced
+    if bounced:
+        out["note"] = ("bounces include the channel fader but not insert effects (EQ, compressor, reverb on the "
+                       "channel are not heard)")
     return out

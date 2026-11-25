@@ -14,7 +14,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from s1bridge import compose, drums, live, snapshots, tools  # noqa: E402
+from s1bridge import compose, drums, live, mixfix, snapshots, tools  # noqa: E402
 from s1bridge.common import ToolError  # noqa: E402
 
 try:
@@ -248,6 +248,27 @@ class InsertBars(unittest.TestCase):
         self.assertEqual(keys[0]["notes"][0]["length"], 1.0)
 
 
+class MixFixPlan(unittest.TestCase):
+    check = {"files": {"Bass": {"loudness": {"peak_dbfs": 1.0}}, "Pad": {"loudness": {"peak_dbfs": -3.0}},
+                       "Arp": {"loudness": {"peak_dbfs": -12.0}}, "Fx": {"silent": True}},
+             "masking": [{"band_hz": 125, "stems": ["Pad", "Bass"], "difference_db": 2.0, "louder": "Pad"},
+                         {"band_hz": 1000, "stems": ["Pad", "Arp"], "difference_db": 3.0, "louder": "Pad"},
+                         {"band_hz": 2000, "stems": ["Pad", "Arp"], "difference_db": 3.0, "louder": "Pad"}]}
+
+    def test_gain_is_equal_for_all_stems(self):
+        gains = [s for s in mixfix.plan(self.check) if s["action"] == "gain"]
+        self.assertEqual({s["track"] for s in gains}, {"Bass", "Pad", "Arp"})
+        self.assertEqual({s["db"] for s in gains}, {-7.0})
+
+    def test_bass_keeps_low_end_and_louder_keeps_mids(self):
+        cuts = [(s["track"], s["freq_hz"], s["band"]) for s in mixfix.plan(self.check) if s["action"] == "eq_cut"]
+        self.assertEqual(cuts, [("Pad", 125, "lmf"), ("Arp", 1000, "mf")])  # one cut per band
+
+    def test_priority_wins(self):
+        cuts = [s["track"] for s in mixfix.plan(self.check, priority=["Arp"]) if s["action"] == "eq_cut"]
+        self.assertEqual(cuts[1], "Pad")
+
+
 class Snapshots(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -311,6 +332,15 @@ class MixCheck(unittest.TestCase):
         s = 0.1 * np.sin(2 * np.pi * 1000 * t)
         lufs = mix_analysis.loudness(np.stack([s, s], axis=1), 48000)
         self.assertAlmostEqual(lufs, -20.0, delta=0.3)
+
+    def test_simulated_cut_lowers_its_band(self):
+        rate = 48000
+        t = np.arange(rate * 2) / rate
+        x = np.stack([0.2 * np.sin(2 * np.pi * 250 * t)] * 2, axis=1)
+        y = mix_analysis.apply_eq(x, rate, [(250, -6.0, 1.4)])
+        self.assertAlmostEqual(20 * np.log10(np.abs(y).max() / np.abs(x).max()), -6.0, delta=0.2)
+        z = mix_analysis.apply_eq(x, rate, [(4000, -6.0, 1.4)])
+        self.assertAlmostEqual(20 * np.log10(np.abs(z).max() / np.abs(x).max()), 0.0, delta=0.2)
 
     def test_silent_file(self):
         tmp = tempfile.mkdtemp()

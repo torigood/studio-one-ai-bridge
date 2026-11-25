@@ -173,10 +173,21 @@ TOOLS = [
                             ["files"])},
     {"name": "daw_mix_check",
      "description": "audio_mix_check on instrument tracks of the open song: each is bounced (the bounced track is "
-                    "removed again, the WAV stays in Bounces) and checked together with any files (e.g. vocal WAVs).",
+                    "removed again, the WAV stays in Bounces) and checked together with any files (e.g. vocal WAVs). "
+                    "Bounces include the fader but not the channel's insert effects.",
      "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK},
                              "files": {"type": "array", "items": _schema({"path": _S, "name": _S}, ["path"])},
                              "wait": _WAIT})},
+    {"name": "daw_mix_fix",
+     "description": "Check the mix of instrument tracks (daw_mix_check), fix it and check again: if a stem peaks above "
+                    "target_peak_db (default -6) all are turned down equally (balance kept); for the strongest overlaps (max_cuts, default 3) the "
+                    "less important stem gets a Pro EQ cut (cut_db, default 3) at that octave. priority = track names, "
+                    "most important first (else bass/kick keep the low end, else the louder stem keeps the band). "
+                    "Takes a snapshot first; apply=false returns the plan only. In after, gain is measured and EQ cuts "
+                    "are estimated (bounces leave insert effects out).",
+     "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK}, "priority": {"type": "array", "items": _S},
+                             "max_cuts": _I, "cut_db": _N, "target_peak_db": _N, "apply": {"type": "boolean"},
+                             "wait": _WAIT}, ["tracks"])},
     {"name": "audio_melody",
      "description": "Melody notes of a single voice or instrument in audio (neural pitch tracker): bar, pos (beat in "
                     "bar), beat, len, note, conf; cents = how far off pitch it was sung; 'unsure' = loud spans with "

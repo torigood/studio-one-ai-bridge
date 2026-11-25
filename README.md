@@ -330,6 +330,9 @@ This removes the extension, the surface, its device entry and the catalog.
 | `daw_read_chords`, `song_write_chords` | Chord track (read live, write offline with auto reopen) |
 | `daw_write_pattern`, `daw_transform_notes`, `daw_copy_bars` | Bass/pad/arp/stab parts from chords (voice-led); quantize, swing, humanize, transpose; copy bars to another place |
 | `daw_snapshot` | Take, list and restore snapshots of the open song (undo a run of AI edits in one step) |
+| `daw_write_drums` | Drum parts by genre (pop, rock, ballad, funk, house, trap, lofi, reggaeton, dnb, rnb) or a custom step groove, with fills and crashes (GM drum map) |
+| `daw_insert_bars` | Make room mid-song: move later events right, split instrument parts that cross the point |
+| `daw_mix_fix` | Level the stems (balance kept) and cut overlaps with Pro EQ, then check again (snapshot first) |
 | `audio_mix_check`, `daw_mix_check` | Loudness (LUFS), stereo, octave bands and masking between stems (bounces instrument tracks) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | Tempo, playhead, time signatures |
 | `daw_set_loop` | Loop range by bars or beats, loop on/off |

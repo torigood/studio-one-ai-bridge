@@ -247,6 +247,9 @@ python3 server/run.py uninstall --apply
 | `daw_read_chords`, `song_write_chords` | 코드 트랙 (실시간 읽기, 오프라인 쓰기) |
 | `daw_write_pattern`, `daw_transform_notes`, `daw_copy_bars` | 코드에서 베이스·패드·아르페지오·스탭 파트 생성(보이스 리딩), 퀀타이즈·스윙·휴머나이즈·트랜스포즈, 마디 복사 |
 | `daw_snapshot` | 열린 곡 스냅샷 찍기·목록·복원 (AI 편집 여러 개를 한 번에 되돌리기) |
+| `daw_write_drums` | 장르별 드럼 파트 (pop, rock, ballad, funk, house, trap, lofi, reggaeton, dnb, rnb) 또는 직접 쓴 스텝 그루브, 필인·크래시 포함 (GM 드럼 맵) |
+| `daw_insert_bars` | 곡 중간에 마디 넣기: 뒤 이벤트를 밀고, 걸친 악기 파트는 나눔 |
+| `daw_mix_fix` | 스템 레벨 맞추기(밸런스 유지)와 Pro EQ로 겹침 깎기, 다시 측정 (먼저 스냅샷) |
 | `audio_mix_check`, `daw_mix_check` | 라우드니스(LUFS), 스테레오, 옥타브 밴드, 스템 간 마스킹 (악기 트랙은 바운스해서) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | 템포, 재생 위치, 박자표 |
 | `daw_set_loop` | 마디·박 단위 루프 구간, 루프 켜기·끄기 |

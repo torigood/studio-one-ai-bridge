@@ -11,6 +11,9 @@ Per file:
 Across files (stems of one song): masking = octave bands where two stems are both strong and within
 6 dB of each other, strongest first. Stems are compared time-averaged, so their start offsets do not
 matter; two parts that never play together can still be listed.
+
+Stems bounced in Studio One (Bounce To New Track) include the channel fader but NOT its insert effects
+(observed 2026-11-25: -18 dB on a Pro EQ output changed nothing). eq:name=freq,gain,q simulates peaking cuts.
 """
 import json
 import os
@@ -94,8 +97,31 @@ def _read(paths):
     return np.concatenate(chunks), rate
 
 
-def analyze_file(path):
+def peaking_response(rate, n, freq, gain_db, q):
+    """|H| of an RBJ peaking EQ on the rfft bins of n samples (Pro EQ's peaking bands are of this kind)."""
+    w = 2 * np.pi * np.fft.rfftfreq(n, 1.0 / rate) / rate
+    A, w0 = 10 ** (gain_db / 40.0), 2 * np.pi * freq / rate
+    al = np.sin(w0) / (2 * q)
+    b = [1 + al * A, -2 * np.cos(w0), 1 - al * A]
+    a = [1 + al / A, -2 * np.cos(w0), 1 - al / A]
+    return np.abs(_biquad_response(b, a, w))
+
+
+def apply_eq(x, rate, eqs):
+    """x (frames x channels) through peaking bands [(freq, gain_db, q)], zero phase (an estimate: Studio One's
+    bounce leaves insert effects out, so a cut is simulated to judge it)."""
+    if not eqs:
+        return x
+    n = len(x)
+    h = np.ones(n // 2 + 1)
+    for f, g, q in eqs:
+        h = h * peaking_response(rate, n, f, g, q)
+    return np.fft.irfft(np.fft.rfft(x, axis=0) * h[:, None], n=n, axis=0).astype(np.float32)
+
+
+def analyze_file(path, eqs=None):
     x, rate = _read(path if isinstance(path, list) else [path])
+    x = apply_eq(x, rate, eqs)
     if len(x) < rate // 2:
         raise ValueError("%s: less than half a second of audio" % path)
     mono = x.mean(axis=1)
@@ -157,13 +183,16 @@ def masking(files, limit=8):
     return hits[:limit]
 
 
-def analyze(named):
+def analyze(named, eqs=None):
+    eqs = eqs or {}
     groups = {}
     for name, path in named:
         groups.setdefault(name, []).append(path)
     files = {}
     for name, paths in groups.items():
-        files[name] = analyze_file(paths)
+        files[name] = analyze_file(paths, eqs.get(name))
+        if eqs.get(name):
+            files[name]["simulated_eq"] = [{"freq_hz": f, "gain_db": g, "q": q} for f, g, q in eqs[name]]
         files[name]["files" if len(paths) > 1 else "file"] = paths if len(paths) > 1 else paths[0]
     out = {"files": files}
     if len(files) > 1:
@@ -174,14 +203,19 @@ def analyze(named):
 
 
 if __name__ == "__main__":
-    pairs = []
+    # args: name=file.wav ... and eq:name=freq,gain_db,q to simulate a peaking cut on a stem
+    pairs, eq_args = [], {}
     for arg in sys.argv[1:]:
+        if arg.startswith("eq:"):
+            name, _, spec = arg[3:].rpartition("=")
+            eq_args.setdefault(name, []).append(tuple(float(v) for v in spec.split(",")))
+            continue
         name, sep, path = arg.partition("=")
         if not sep:
             name, path = os.path.splitext(os.path.basename(arg))[0], arg
         pairs.append((name, path))
     try:
-        r = analyze(pairs)
+        r = analyze(pairs, eq_args)
     except (OSError, ValueError) as e:
         r = {"error": str(e)}
     print(json.dumps(r, ensure_ascii=False))
