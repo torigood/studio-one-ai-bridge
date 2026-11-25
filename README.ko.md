@@ -103,22 +103,6 @@ Claude에게 "ChatGPT랑 Studio One 공유해줘" / "공유 꺼줘"라고 해도
 > **보안:** 공유가 켜져 있는 동안 커넥터 URL을 아는 사람은 누구나 Studio One을 조작하고 곡을 읽을 수
 > 있습니다. URL을 비공개로 두고, 유출되면 `share --new-token`을 실행하세요.
 
-## 채팅 페이지 (Studio One 옆에서 AI와 대화)
-
-`chat`은 이 Mac에서 작은 채팅 페이지를 열고, 이미 로그인된 AI 명령줄 에이전트(Codex 또는 Claude Code)가
-이 브리지를 도구로 써서 답합니다. API 키는 저장하지 않습니다.
-
-```bash
-python3 server/run.py chat                 # 지금 실행하고 페이지 열기
-python3 server/run.py chat --enable        # 백그라운드로, 로그인할 때도 실행
-python3 server/run.py chat --backend codex --model <모델>   # 또는 --backend claude
-```
-
-Studio One에서 Track > **AI Bridge - Open Chat**으로 페이지를 엽니다(브리지 0.9.0). **새 대화**를 누를 때까지
-대화가 이어집니다. Codex는 계정에서 쓸 수 있는 모델을 자체 목록에서 고르고, Claude Code는 터미널에서 `claude` 실행 후
-`/login`을 한 번 해야 합니다.
-
-
 ## 체크아웃으로 설치 (모든 MCP 클라이언트)
 
 ### 1. 코드 받기

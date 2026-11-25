@@ -203,10 +203,6 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
   0xdc); chunk at 0xe0 = the preset JSON (same keys as a `.vital` file) + a fixed JUCE trailer; then MetaInfo XML and
   `List` (Comp/Cont/Info, int64 offset + size). Replacing the JSON and shifting the four sizes/offsets loads any `.vital`
   preset (sound changed audibly; re-saved by Studio One). `preset_style` sits in the first few KB of a `.vital` file.
-- [O] **Codex exec as a chat backend**: `codex exec` reads piped stdin as extra prompt and waits for EOF (pass
-  `stdin=DEVNULL`); an MCP server registered under another name without `default_tools_approval_mode="approve"` gets its
-  calls cancelled ("user cancelled MCP tool call"), so the chat overrides the registered `studio-one` entry. A ChatGPT
-  account accepts only the models in `~/.codex/models_cache.json`.
 - [O] **Bridge 0.9.0 live**: `batch` ran 5 ops (one failing on purpose) in one job, 0.7 s round trip. A second
-  `EditTask` class ("AI Bridge - Open Chat", same declaration as Run Jobs) loaded fine; `Host.GUI.openUrl(Host.Url(
-  "http://127.0.0.1:<port>/..."))` ran without error from it (bridge log "opened chat"; opens the default browser).
+  `EditTask` class (same declaration as Run Jobs) loaded fine, and `Host.GUI.openUrl(Host.Url("http://127.0.0.1:..."))`
+  ran from it and opened the default browser (a chat page experiment, removed again: the MCP clients already chat).

@@ -117,22 +117,6 @@ python3 server/run.py share --enable
 The connector URL is then `https://<name>.ngrok-free.app/<secret>/mcp` and stays the same, so the ChatGPT
 connector is set up once. `share --provider cloudflare` switches back.
 
-## Chat page (talk to the AI next to Studio One)
-
-`chat` serves a small chat page on this Mac and answers through an AI command-line agent you are already
-signed in to (Codex or Claude Code), with this bridge as its tools. No API key is stored here.
-
-```bash
-python3 server/run.py chat                 # run now and open the page
-python3 server/run.py chat --enable        # run in the background, also at login
-python3 server/run.py chat --backend codex --model <model>   # or --backend claude
-```
-
-In Studio One, Track > **AI Bridge - Open Chat** opens the page (bridge 0.9.0). One conversation continues
-until **새 대화** (new chat). Codex picks a model your account allows from its own model list; Claude Code needs
-`claude` then `/login` once in Terminal.
-
-
 ## Install from a checkout (any MCP client)
 
 ### 1. Get the code
