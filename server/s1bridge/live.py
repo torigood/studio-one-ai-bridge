@@ -5,6 +5,7 @@ saved song while Studio One has it open (offline_edit).
 import os
 import subprocess
 import time
+import unicodedata
 import urllib.parse
 
 from . import clients, config, midi, setup, songwrite
@@ -122,7 +123,17 @@ def open_in_daw(path):
     active = active_song_path()
     if active is None:
         return None
-    return os.path.realpath(active) == os.path.realpath(path)
+    return same_path(active, path)
+
+
+def same_path(a, b):
+    """Same file, also when one path is NFD (Studio One and Finder on macOS: Korean, accents) and the other NFC."""
+    try:
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return (unicodedata.normalize("NFC", os.path.realpath(a)) == unicodedata.normalize("NFC", os.path.realpath(b)))
 
 
 def save_open_song(path):
@@ -142,6 +153,14 @@ def offline_edit(path, write):
     inside the Run Jobs edit task crashed Studio One (2026-10-17). `open -a "Studio One 5" <song>`
     reopens the song in the running app."""
     was_open = open_in_daw(path)
+    for _ in range(3):
+        # None = the bridge did not answer (busy saving, a dialog open). Writing then would edit the file under
+        # an open song, and its next save would undo the edit (seen 2026-11-25 right after a snapshot).
+        if was_open is not None or not setup.studio_one_running():
+            break
+        # (No answer three times running: no song is open, since Run Jobs needs one.)
+        time.sleep(1.5)
+        was_open = open_in_daw(path)
     if was_open:
         save_open_song(path)
         midi.press(midi.CC_CLOSE)

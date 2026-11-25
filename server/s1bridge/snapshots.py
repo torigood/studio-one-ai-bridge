@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 
 from . import config, live, midi, songwrite
 from .common import ToolError, song_path
@@ -36,7 +37,8 @@ def _song(path):
 
 
 def _folder(path):
-    return os.path.join(ROOT, os.path.splitext(os.path.basename(path))[0])
+    # NFC: Studio One reports NFD paths on macOS, a typed path is usually NFC; both mean one folder
+    return os.path.join(ROOT, unicodedata.normalize("NFC", os.path.splitext(os.path.basename(path))[0]))
 
 
 def _entries(path):

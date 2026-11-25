@@ -122,7 +122,13 @@ class Composing(unittest.TestCase):
         segs = re.findall(r'<TempoMapSegment curveType="(\d)" start="([^"]+)" end="([^"]+)"', xml)
         self.assertEqual([(c, s) for c, s, _e in segs], [("0", "0"), ("1", "16"), ("0", "32")])
         self.assertEqual(segs[0][2], "16")
-        self.assertEqual(len(re.findall("<EnvelopePoint", xml)), 3)
+        # a hold point before the jump at 16 (Studio One glides between points), none before 32 (a ramp)
+        starts = re.findall(r'<EnvelopePoint(?: start="([^"]+)")?', xml)
+        self.assertEqual(starts, ["", "15.999", "16", "32"])
+        with Song(self.path) as s:
+            self.assertEqual(s.tempo_map(), [{"start_beats": 0.0, "bpm": 120.0},
+                                             {"start_beats": 16.0, "bpm": 90.0, "ramp": True},
+                                             {"start_beats": 32.0, "bpm": 140.0}])
 
     def test_tempo_errors(self):
         for bad in ([], [{"bar": 1, "bpm": 500}], [{"bpm": 100}], [{"bar": 1, "bpm": 90}, {"beat": 0, "bpm": 100}]):
