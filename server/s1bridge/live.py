@@ -267,7 +267,7 @@ def version_check(status):
     if installed is None:
         out["problem"] = "The bridge is not installed in Studio One. " + _INSTALL % clients.command("setup", "--apply")
     elif installed != want:
-        out["problem"] = ("Installed bridge %s is older than this server (%s). " % (installed, want) +
+        out["problem"] = ("Installed bridge %s differs from the one this server ships (%s). " % (installed, want) +
                           _INSTALL % clients.command("setup", "--apply"))
     elif loaded and loaded != installed and isinstance(status, dict) and status.get("loaded"):
         out["problem"] = ("Studio One is still running bridge %s; %s is installed. Ask the user to restart "

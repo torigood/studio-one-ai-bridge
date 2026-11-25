@@ -1,10 +1,13 @@
+import io
 import os
 import sys
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "server"))
 
 from s1bridge import devices, setup  # noqa: E402
 
@@ -50,7 +53,8 @@ class SetupTests(unittest.TestCase):
         with zipfile.ZipFile(package) as z:
             self.assertIn("bridge.js", z.namelist())
         with open(os.path.join(self.paths.ext_dir, "metainfo.xml"), encoding="utf-8") as f:
-            self.assertIn('value="%s"' % setup.source_version(), f.read())
+            from s1bridge.version import VERSION
+            self.assertIn('value="%s"' % VERSION, f.read())
         self.assertTrue(os.path.isfile(os.path.join(self.paths.ext_dir, "installdata.xml")))
         self.assertTrue(os.path.isfile(os.path.join(self.paths.surface_dir, "AI Bridge.device")))
         self.assertTrue(devices.is_registered(self.paths.devices))
@@ -73,13 +77,35 @@ class SetupTests(unittest.TestCase):
         latest = os.path.join(self.paths.backups, sorted(backups)[-1])
         self.assertTrue(any(n.endswith("MusicDevices.settings") for n in os.listdir(latest)))
 
-    def test_bridge_xml_versions_match_bridge_js(self):
-        """classfactory.xml and metainfo.xml carry the same version as kBridgeVersion."""
+    def test_package_fills_in_build_and_release(self):
+        """The sources carry placeholders; the package gets the build id (hash of bridge/src) and the release."""
         import re
-        want = setup.source_version()
-        for name in ("classfactory.xml", "metainfo.xml"):
+        from s1bridge.version import VERSION
+        for name in ("bridge.js", "classfactory.xml", "metainfo.xml"):
             with open(os.path.join(setup.BRIDGE_SRC, name), encoding="utf-8") as f:
-                self.assertEqual(re.findall(r'(?:version|value)="(\d+\.\d+\.\d+)"', f.read()), [want], name)
+                self.assertIn("@VERSION@", f.read(), name)
+        with zipfile.ZipFile(io.BytesIO(setup.build_package())) as z:
+            js = z.read("bridge.js").decode()
+            self.assertEqual(setup.bridge_version(js), setup.source_version())
+            self.assertIn('kRelease = "%s"' % VERSION, js)
+            for name in ("classfactory.xml", "metainfo.xml"):
+                x = z.read(name).decode()
+                self.assertNotIn("@VERSION@", x)
+                self.assertEqual(re.findall(r'(?:version|value)="(\d+\.\d+\.\d+)"', x), [VERSION], name)
+
+    def test_build_id_ignores_release_and_follows_sources(self):
+        from s1bridge import version
+        a = setup.source_version()
+        with mock.patch.object(version, "VERSION", "99.1.0"):
+            self.assertEqual(setup.source_version(), a)
+        self.assertRegex(a, r"^b[0-9a-f]{10}$")
+
+    def test_versions_agree(self):
+        import re
+        from s1bridge.version import VERSION
+        with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as f:
+            self.assertEqual(re.search(r'^version = "([^"]+)"', f.read(), re.M).group(1), VERSION)
+        self.assertRegex(VERSION, r"^\d{2}\.[1-9]\d?\.(0|[1-9]\d*)$")
 
     def test_doctor_flags_outdated_bridge(self):
         self.install()

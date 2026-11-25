@@ -4,7 +4,10 @@
 // shipped scripts (see docs/re-findings.md). Lines marked UNVERIFIED use
 // names inferred from those scripts but not seen with these exact arguments.
 
-const kBridgeVersion = "0.9.0";
+// Filled in by setup when it builds the package (setup.build_package): kBridgeVersion = hash of the bridge
+// sources (a reinstall is needed when it differs), kRelease = the release it came with (shown only).
+const kBridgeVersion = "@BUILD@";
+const kRelease = "@VERSION@";
 const kProtocol = 1;
 const kMailbox = "local://$USERCONTENT/AIBridge"; // ~/Music/Studio One 5/AIBridge
 
@@ -157,7 +160,7 @@ function fail (msg)
 
 Ops.ping = function (context, args)
 {
-	return { pong: true, version: kBridgeVersion };
+	return { pong: true, version: kBridgeVersion, release: kRelease };
 };
 
 Ops.list_tracks = function (context, args)

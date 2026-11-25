@@ -72,7 +72,7 @@ class BridgeToolTests(unittest.TestCase):
         with zipfile.ZipFile(os.path.join(self.paths.ext_dir, "scripts", "aibridge.package"), "w") as z:
             z.writestr("bridge.js", 'const kBridgeVersion = "0.0.1";\n')
         r = live.version_check({"loaded": True, "version": "0.0.1"})
-        self.assertIn("older than this server", r["problem"])
+        self.assertIn("differs from the one this server ships", r["problem"])
 
     def test_status_studio_one_needs_restart(self):
         self.setup_tool()

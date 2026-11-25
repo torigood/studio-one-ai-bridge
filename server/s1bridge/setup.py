@@ -32,6 +32,7 @@ import time
 import zipfile
 
 from . import clients, config, devices
+from .version import VERSION
 
 EXT_ID = "local.s1aibridge"
 BRIDGE_SRC = os.path.join(config.PROJECT_ROOT, "bridge", "src")
@@ -90,20 +91,32 @@ def bridge_version(js_text):
 
 
 def source_version():
-    with open(os.path.join(BRIDGE_SRC, "bridge.js"), encoding="utf-8") as f:
-        return bridge_version(f.read())
+    """Build id of the bridge in this checkout: a hash of bridge/src. It changes only when the bridge changes,
+    not with every release, so a new release asks for a reinstall only when one is needed."""
+    import hashlib
+    h = hashlib.sha256()
+    for name in sorted(os.listdir(BRIDGE_SRC)):
+        path = os.path.join(BRIDGE_SRC, name)
+        if os.path.isfile(path) and not name.startswith("."):
+            h.update(name.encode() + b"\0" + _read_bytes(path) + b"\0")
+    return "b" + h.hexdigest()[:10]
 
 
 def build_package():
-    """aibridge.package (a plain ZIP, same as macros.package) from bridge/src, as bytes."""
+    """aibridge.package (a plain ZIP, same as macros.package) from bridge/src, as bytes. @BUILD@ and @VERSION@
+    in the sources become the build id and the release version."""
     if not os.path.isdir(BRIDGE_SRC):
         raise RuntimeError("bridge sources not found at %s; run setup from a checkout" % BRIDGE_SRC)
+    build = source_version()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name in sorted(os.listdir(BRIDGE_SRC)):
             path = os.path.join(BRIDGE_SRC, name)
             if os.path.isfile(path) and not name.startswith("."):
-                z.write(path, name)
+                data = _read_bytes(path)
+                if name.endswith((".js", ".xml")):
+                    data = data.replace(b"@BUILD@", build.encode()).replace(b"@VERSION@", VERSION.encode())
+                z.writestr(name, data)
     return buf.getvalue()
 
 
@@ -175,7 +188,7 @@ def plan_install(paths, target="extension", surface=True, device=True, catalog=T
     steps = []
     package = build_package()
     if target == "extension":
-        meta = EXT_METAINFO % (EXT_ID, source_version())
+        meta = EXT_METAINFO % (EXT_ID, VERSION)
         steps.append(("write", os.path.join(paths.ext_dir, "metainfo.xml"), meta.encode("utf-8")))
         steps.append(("write", os.path.join(paths.ext_dir, "installdata.xml"), EXT_INSTALLDATA.encode("utf-8")))
         steps.append(("write", os.path.join(paths.ext_dir, "scripts", "aibridge.package"), package))

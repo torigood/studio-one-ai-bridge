@@ -18,6 +18,7 @@ function BridgeService ()
 			writeJson (null, "status.json", {
 				loaded: true,
 				version: kBridgeVersion,
+				release: kRelease,
 				protocol: kProtocol,
 				started: new Date ().toISOString ()
 			});

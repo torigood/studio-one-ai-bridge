@@ -117,8 +117,9 @@ def python_files(arch):
 
 
 def project_version():
-    with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as f:
-        return re.search(r'^version\s*=\s*"([^"]+)"', f.read(), re.M).group(1)
+    """The release version (server/s1bridge/version.py, the only place it is written)."""
+    with open(os.path.join(ROOT, "server", "s1bridge", "version.py"), encoding="utf-8") as f:
+        return re.search(r'^VERSION\s*=\s*"([^"]+)"', f.read(), re.M).group(1)
 
 
 def first_sentence(text):

@@ -407,7 +407,8 @@ repository itself contains no third-party code.
 server/s1bridge/   MCP server: JSON-RPC loop, tools, song parser, mailbox, MIDI, config
 server/run.py      entry point usable from any directory
 bridge/src/        Studio One extension source (JavaScript + XML)
-packaging/         build_mcpb.py: Claude Desktop extension (.mcpb, with Python) into dist/; start.sh launcher
+packaging/         build_mcpb.py: Claude Desktop extension (.mcpb, with Python) into dist/; start.sh launcher;
+                   release.py: CalVer release (YY.W.N, weeks Sunday to Saturday), tests, .mcpb, GitHub release
 surface/           "AI Bridge" control surface definition
 install/           install.sh: one-line installer
 re/tools/          package reader and catalog extractor (run on your own installation)
