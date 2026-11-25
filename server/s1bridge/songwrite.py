@@ -187,14 +187,15 @@ def write_time_signatures(path, signatures):
 
 TEMPO_MIN, TEMPO_MAX = 10.0, 400.0  # the transport's tempo range; the tempo envelope is normalized to it
 TEMPO_END = "1.7976931348623156386368421785227527018228425601508e+200"  # Studio One's open end
+TEMPO_HOLD = 0.001  # quarter notes between a hold point and the tempo change after it
 
 
 def write_tempo_map(path, changes):
     """Replace the song's tempo map. changes: [{"bar" (1-based) or "beat", "bpm", "ramp": bool}];
     the first is moved to the song start. ramp=true glides linearly from this point to the next one.
-    song.xml: TempoMap > Attributes envelope (EnvelopePoint value = (bpm - 10) / 390) and one
-    TempoMapSegment per point: start/end in quarter notes, tempo in seconds per quarter, curveType
-    0 constant, 1 linear."""
+    song.xml: TempoMap > Attributes envelope (EnvelopePoint start in quarter notes, value = (bpm - 10) / 390;
+    what Studio One plays, linear between points) and TempoMapSegment per change (start/end in quarter
+    notes, tempo in seconds per quarter, curveType 0 constant, 1 linear; Studio One recomputes them)."""
     import re
     with Song(path) as song:
         sigs = song.time_signatures()
@@ -221,10 +222,19 @@ def write_tempo_map(path, changes):
         return ("%.10f" % v).rstrip("0").rstrip(".")
 
     env, segs = [], []
-    for i, (beat, bpm, ramp) in enumerate(pts):
-        last = i == len(pts) - 1
+
+    def point(beat, bpm):
         env.append('\n\t\t\t\t\t<EnvelopePoint%s value="%s"/>'
                    % ("" if beat == 0 else ' start="%s"' % num(beat), num((bpm - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN))))
+
+    for i, (beat, bpm, ramp) in enumerate(pts):
+        last = i == len(pts) - 1
+        point(beat, bpm)
+        # Observed 2026-11-25: Studio One plays the envelope, gliding linearly between points whatever the
+        # segments' curveType says. A constant tempo up to a change needs a hold point just before it (Studio
+        # One's own maps make jumps the same way, with points close together).
+        if not ramp and not last and pts[i + 1][0] - beat > 2 * TEMPO_HOLD:
+            point(pts[i + 1][0] - TEMPO_HOLD, bpm)
         segs.append('\n\t\t\t\t<TempoMapSegment curveType="%d" start="%s" end="%s" tempo="%s"/>'
                     % (1 if ramp and not last else 0, num(beat), TEMPO_END if last else num(pts[i + 1][0]),
                        repr(60.0 / bpm)))

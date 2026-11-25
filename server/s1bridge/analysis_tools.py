@@ -49,14 +49,14 @@ def _analysis_cache_key(module, args):
     return os.path.join(config.ANALYSIS_DIR, "cache", h.hexdigest() + ".json")
 
 
-def run_analysis(module, args, timeout=900):
+def run_analysis(module, args, timeout=900, cache=True):
     """Run an analysis module in the analysis pack's Python at low priority (Studio One keeps the CPU);
     its JSON result, cached per file and arguments."""
     if not os.path.exists(ANALYSIS_PYTHON):
         raise ToolError("analysis Python not found: %s (the user runs this in Terminal: %s)"
                         % (ANALYSIS_PYTHON, clients.command("analysis-setup")))
-    cache = _analysis_cache_key(module, args)
-    if os.path.isfile(cache):
+    cache = _analysis_cache_key(module, args) if cache else None
+    if cache and os.path.isfile(cache):
         with open(cache) as f:
             return json.load(f)
     r = subprocess.run([ANALYSIS_PYTHON, "-m", "s1bridge." + module] + [str(x) for x in args], cwd=PACKAGE_PARENT,
@@ -70,6 +70,8 @@ def run_analysis(module, args, timeout=900):
                             "(%s)" % err.splitlines()[-1])
         raise ToolError("analysis failed: %s" % err[-500:])
     out = json.loads(r.stdout.strip().splitlines()[-1])
+    if not cache:
+        return out
     try:
         os.makedirs(os.path.dirname(cache), exist_ok=True)
         with open(cache + ".part", "w") as f:
@@ -285,4 +287,43 @@ def song_analyze(path, audio=True):
                 out["audio"][os.path.basename(f)] = audio_analyze(f, 0, 120)
             except ToolError as e:
                 out["audio"][os.path.basename(f)] = {"error": str(e)}
+    return out
+
+
+def mix_check(files, eqs=None):
+    """audio_mix_check: files [{name?, path}] -> mix_analysis result (loudness, stereo, octave bands, masking).
+    Files with the same name are analysed as one stem (the parts of a bounced track)."""
+    args = []
+    for f in files:
+        path = os.path.expanduser(f["path"])
+        if not os.path.isfile(path):
+            raise ToolError("file not found: %s" % path)
+        name = f.get("name") or os.path.splitext(os.path.basename(path))[0]
+        args.append("%s=%s" % (name.replace("=", "-"), path))
+    if not args:
+        raise ToolError("no files")
+    for name, bands in (eqs or {}).items():
+        args += ["eq:%s=%g,%g,%g" % (str(name).replace("=", "-"), f, g, q) for f, g, q in bands]
+    # not cached: a re-bounce writes the same file names
+    return run_analysis("mix_analysis", args, timeout=300, cache=False)
+
+
+def daw_mix_check(tracks, files, wait, eqs=None):
+    """daw_mix_check: bounce instrument tracks (bounced track removed again), add WAV files, check all."""
+    from . import editing
+    items, bounced = [], []
+    for t in tracks or []:
+        r = editing.bounce(t, None, False, False, wait)
+        if not r.get("wav"):
+            raise ToolError("bouncing %s gave no WAV" % t)
+        items += [{"name": str(t), "path": w} for w in r.get("wavs") or [r["wav"]]]
+        bounced.append(t)
+    items += list(files or [])
+    if not items:
+        raise ToolError("pass tracks (instrument tracks to bounce) and/or files (WAVs)")
+    out = mix_check(items, eqs)
+    out["bounced"] = bounced
+    if bounced:
+        out["note"] = ("bounces include the channel fader but not insert effects (EQ, compressor, reverb on the "
+                       "channel are not heard)")
     return out

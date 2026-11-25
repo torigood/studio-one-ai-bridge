@@ -22,8 +22,9 @@ from .keys import estimate_key
 BANDS = [("sub", 20, 60), ("bass", 60, 250), ("low_mid", 250, 2000), ("high_mid", 2000, 6000), ("air", 6000, 20000)]
 
 
-def read_wav(path, start_sec=0.0, length_sec=None):
-    """Mono float32 samples and sample rate. PCM 16/24/32-bit and IEEE float 32/64."""
+def read_wav(path, start_sec=0.0, length_sec=None, mono=True):
+    """Float32 samples (mono, or frames x channels with mono=False) and sample rate. PCM 16/24/32-bit and
+    IEEE float 32/64."""
     with open(path, "rb") as f:
         data = f.read()
     if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
@@ -60,7 +61,8 @@ def read_wav(path, start_sec=0.0, length_sec=None):
         x = np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
     else:
         raise ValueError("unsupported WAV format: tag %d, %d bits" % (tag, bits))
-    return x.reshape(-1, ch).mean(axis=1), rate
+    x = x.reshape(-1, ch)
+    return (x.mean(axis=1) if mono else x), rate
 
 
 def _db(v):

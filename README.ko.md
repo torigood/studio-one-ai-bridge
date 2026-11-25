@@ -245,6 +245,16 @@ python3 server/run.py uninstall --apply
 | `daw_rename_track`, `daw_duplicate_track`, `daw_delete_track` | 이름 바꾸기(악기 채널 포함), 파트·클립까지 복제, 삭제 |
 | `daw_read_notes`, `daw_edit_notes` | 열린 곡의 노트 읽기, 바꾸기·추가·삭제 |
 | `daw_read_chords`, `song_write_chords` | 코드 트랙 (실시간 읽기, 오프라인 쓰기) |
+| `daw_write_pattern`, `daw_transform_notes`, `daw_copy_bars` | 코드에서 베이스·패드·아르페지오·스탭 파트 생성(보이스 리딩), 퀀타이즈·스윙·휴머나이즈·트랜스포즈, 마디 복사 |
+| `daw_snapshot` | 열린 곡 스냅샷 찍기·목록·복원 (AI 편집 여러 개를 한 번에 되돌리기) |
+| `daw_write_drums` | 장르별 드럼 파트 (pop, rock, ballad, funk, house, trap, lofi, reggaeton, dnb, rnb) 또는 직접 쓴 스텝 그루브, 필인·크래시 포함 (GM 드럼 맵) |
+| `daw_insert_bars` | 곡 중간에 마디 넣기: 뒤 이벤트를 밀고, 걸친 악기 파트는 나눔 |
+| `daw_mix_fix` | 스템 레벨 맞추기(밸런스 유지)와 Pro EQ로 겹침 깎기, 다시 측정 (먼저 스냅샷) |
+| `library_sounds`, `daw_load_sound` | 모든 악기에서 말로 소리 찾기("warm pad"), 그 소리로 악기 트랙 한 번에 추가 (Vital `.vital` 프리셋도 로드) |
+| `daw_apply_chain` | 역할별 이펙트 체인 (vocal, bass, pad, keys, lead, pluck, drums, guitar, strings, loud), 리버브·딜레이 센드 공유 |
+| `daw_duck` | 사이드체인처럼 킥마다 트랙 볼륨 내리기 (볼륨 오토메이션) |
+| `daw_batch`, `song_batch` | 여러 실시간 호출을 한 번의 브리지 작업으로, 여러 곡 파일 편집을 한 번의 재열기로 |
+| `audio_mix_check`, `daw_mix_check` | 라우드니스(LUFS), 스테레오, 옥타브 밴드, 스템 간 마스킹 (악기 트랙은 바운스해서) |
 | `daw_transport_info`, `daw_set_tempo`, `daw_set_position`, `song_set_time_signatures` | 템포, 재생 위치, 박자표 |
 | `daw_set_loop` | 마디·박 단위 루프 구간, 루프 켜기·끄기 |
 | `song_write_markers` | 마커 트랙에 섹션 이름 (Intro, Verse, Chorus...) |

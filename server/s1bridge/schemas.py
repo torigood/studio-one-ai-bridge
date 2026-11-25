@@ -61,6 +61,11 @@ TOOLS = [
      "description": "Preset files of an instrument by plug-in name (e.g. 'Mai Tai', 'Mojito'), filtered by words in "
                     "name or folder (e.g. 'warm pad'); for song_load_preset.",
      "inputSchema": _schema({"plugin": _S, "query": _S, "limit": _I}, ["plugin"])},
+    {"name": "library_sounds",
+     "description": "Find sounds across every installed instrument by words (e.g. 'warm pad', 'sub bass', 'pluck'): "
+                    "preset name, folder and style (Vital presets carry one), with synonyms; best first. Load one "
+                    "with daw_load_sound. plugin limits it to one instrument.",
+     "inputSchema": _schema({"query": _S, "plugin": _S, "limit": _I}, ["query"])},
     {"name": "library_plugin_params",
      "description": "Parameters of a plug-in for daw_plugin_param. Native (Pro EQ, Room Reverb, Mojito...): IDs and "
                     "ranges from factory presets, plus preset names. VST3 (Vital, Surge XT...): 'vstp<id>' with titles, "
@@ -135,9 +140,18 @@ TOOLS = [
                              "copy": {"type": "boolean"}}, ["path", "track", "file", "start_beats"])},
     {"name": "song_load_preset",
      "description": "Load a preset into the instrument a track plays (name or file path from library_presets): "
-                    "Studio One instruments (Mai Tai, Mojito, Impact, SampleOne) and .vstpreset/.aupreset files. "
-                    "Presets inside a plug-in's own browser (Vital, BBC SO) cannot be loaded this way.",
+                    "Studio One instruments (Mai Tai, Mojito, Impact, SampleOne), Vital .vital presets and "
+                    ".vstpreset/.aupreset files. Presets inside other plug-ins' own browsers (Surge XT, BBC SO) "
+                    "cannot be loaded this way.",
      "inputSchema": _schema({"path": _SONG, "track": _TRACK, "preset": _S}, ["path", "track", "preset"])},
+    {"name": "song_batch",
+     "description": "Several song_* edits of one song with ONE save/close/reopen (instead of ~8 s each): edits "
+                    "[{tool, args}] with tool song_write_cc, song_write_chords, song_write_markers, song_write_sections, "
+                    "song_write_automation, song_write_plugin_automation, song_set_tempo_map, song_set_time_signatures, "
+                    "song_add_loop, song_add_audio, song_add_send, song_load_preset, song_remove_effect; args as for "
+                    "that tool without path. Stops at the first failing edit.",
+     "inputSchema": _schema({"path": _SONG, "edits": {"type": "array", "items": _schema(
+         {"tool": _S, "args": {"type": "object"}}, ["tool"])}}, ["path", "edits"])},
     {"name": "song_add_send",
      "description": "Add a send from a track or mixer channel to an EXISTING FX channel or bus (destination = its label, "
                     "e.g. 'Room Reverb'), so tracks share one reverb. level_db (default -6), pan -1..1, prefader.",
@@ -164,6 +178,30 @@ TOOLS = [
      "description": "Analyze a WAV file: level (peak/RMS dBFS), spectrum balance (sub/bass/low_mid/high_mid/air), "
                     "tempo estimate, key estimate (top 3), loudness per 8 s. Heuristics. Needs numpy (see README).",
      "inputSchema": _schema({"path": _S, "start_sec": _N, "length_sec": _N}, ["path"])},
+    {"name": "audio_mix_check",
+     "description": "Mix check of WAV files [{path, name?}]: loudness (LUFS integrated, peak, PLR), stereo "
+                    "(correlation, side vs mid dB), octave band levels (dB from the loudest band) and tilt; with "
+                    "several stems, masking = octave bands where two stems are both strong and within 6 dB. "
+                    "Needs the analysis pack.",
+     "inputSchema": _schema({"files": {"type": "array", "items": _schema({"path": _S, "name": _S}, ["path"])}},
+                            ["files"])},
+    {"name": "daw_mix_check",
+     "description": "audio_mix_check on instrument tracks of the open song: each is bounced (the bounced track is "
+                    "removed again, the WAV stays in Bounces) and checked together with any files (e.g. vocal WAVs). "
+                    "Bounces include the fader but not the channel's insert effects.",
+     "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK},
+                             "files": {"type": "array", "items": _schema({"path": _S, "name": _S}, ["path"])},
+                             "wait": _WAIT})},
+    {"name": "daw_mix_fix",
+     "description": "Check the mix of instrument tracks (daw_mix_check), fix it and check again: if a stem peaks above "
+                    "target_peak_db (default -6) all are turned down equally (balance kept); for the strongest overlaps (max_cuts, default 3) the "
+                    "less important stem gets a Pro EQ cut (cut_db, default 3) at that octave. priority = track names, "
+                    "most important first (else bass/kick keep the low end, else the louder stem keeps the band). "
+                    "Takes a snapshot first; apply=false returns the plan only. In after, gain is measured and EQ cuts "
+                    "are estimated (bounces leave insert effects out).",
+     "inputSchema": _schema({"tracks": {"type": "array", "items": _TRACK}, "priority": {"type": "array", "items": _S},
+                             "max_cuts": _I, "cut_db": _N, "target_peak_db": _N, "apply": {"type": "boolean"},
+                             "wait": _WAIT}, ["tracks"])},
     {"name": "audio_melody",
      "description": "Melody notes of a single voice or instrument in audio (neural pitch tracker): bar, pos (beat in "
                     "bar), beat, len, note, conf; cents = how far off pitch it was sung; 'unsure' = loud spans with "
@@ -226,6 +264,14 @@ TOOLS = [
      "description": "Bridge status: whether the Studio One bridge has loaded, jobs still waiting, and whether the "
                     "installed bridge matches this server (problem says what to do if not).",
      "inputSchema": _schema({})},
+    {"name": "daw_batch",
+     "description": "Several live calls in one bridge job (much faster than one by one): calls [{tool, args}] with tool "
+                    "daw_list_tracks, daw_add_track, daw_delete_track, daw_list_events, daw_edit_event, daw_delete_event, "
+                    "daw_insert_notes, daw_read_notes, daw_edit_notes, daw_read_chords, daw_list_mixer, "
+                    "daw_list_instruments, daw_add_instrument, daw_set_channel_param, daw_insert_effect, "
+                    "daw_list_effects, daw_plugin_param. Results in order, each ok/result or error.",
+     "inputSchema": _schema({"calls": {"type": "array", "items": _schema(
+         {"tool": _S, "args": {"type": "object"}}, ["tool"])}, "wait": _WAIT}, ["calls"])},
     {"name": "daw_set_loop",
      "description": "Set the loop range and turn looping on or off. start_bar/end_bar 1-based, end exclusive (5 to 9 "
                     "loops bars 5-8); with time signature changes pass start_beat/end_beat. No range: only switch "
@@ -325,6 +371,90 @@ TOOLS = [
                              "add": {"type": "array", "items": _schema(
                                  {"pitch": _I, "start": _N, "length": _N, "velocity": _N}, ["pitch", "start", "length"])},
                              "wait": _WAIT}, ["track", "part_start"])},
+    {"name": "daw_write_pattern",
+     "description": "Write a part generated from chords onto an instrument track. style: bass (pattern root/"
+                    "root_fifth/octave/walk), pad (voice-led held chords), arp (direction up/down/updown/random), "
+                    "stabs (short chords). Chords from chords [{beat, length, chord}], or progression 'Am F C G' "
+                    "('%' holds the last chord) from start_bar with bars_per_chord and repeat, or else the Chord "
+                    "Track (start_bar/end_bar limit it). rate = note spacing in quarter notes (0.5 = 8ths); octave "
+                    "= register (bass 2, others 4); velocity 0..1; gate = note length share; humanize 0..1; "
+                    "seed makes random choices repeatable. replace deletes parts inside the range first.",
+     "inputSchema": _schema({
+         "track": _TRACK, "style": {"type": "string", "enum": ["bass", "pad", "arp", "stabs"]},
+         "chords": {"type": "array", "items": _schema({"beat": _N, "length": _N, "chord": _S},
+                                                      ["beat", "length", "chord"])},
+         "progression": _S, "start_bar": _I, "end_bar": _I, "bars_per_chord": _N, "repeat": _I,
+         "pattern": {"type": "string", "enum": ["root", "root_fifth", "octave", "walk"]},
+         "direction": {"type": "string", "enum": ["up", "down", "updown", "random"]},
+         "rate": _N, "octave": _I, "voices": _I, "velocity": _N, "gate": _N, "accent": _N, "humanize": _N,
+         "seed": _I, "replace": {"type": "boolean"}, "wait": _WAIT}, ["track", "style"])},
+    {"name": "daw_write_drums",
+     "description": "Write a drum part on a drum instrument track: genre pop, rock, ballad, funk, house, trap, lofi, "
+                    "reggaeton, dnb, rnb (or groove {voice: 16 or 32 steps of x X g . r t}), from start_bar for bars "
+                    "(default 8), a fill every fill_every bars (0 = none), crash on bar 1 and after fills. voices "
+                    "limits it (kick, snare, clap, side, rim, hat, open, pedal, ride, crash, tom_high/mid/low/floor). "
+                    "General MIDI pitches; map {voice: pitch} for other kits. swing (genre default), humanize "
+                    "(default 0.3), seed, velocity scale. replace deletes parts inside the range first.",
+     "inputSchema": _schema({
+         "track": _TRACK, "genre": {"type": "string", "enum": ["pop", "rock", "ballad", "funk", "house", "trap",
+                                                              "lofi", "reggaeton", "dnb", "rnb"]},
+         "groove": {"type": "object", "additionalProperties": _S}, "start_bar": _I, "bars": _I, "fill_every": _I,
+         "crash": {"type": "boolean"}, "voices": {"type": "array", "items": _S},
+         "map": {"type": "object", "additionalProperties": _I}, "swing": _N, "humanize": _N, "seed": _I,
+         "velocity": _N, "replace": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
+    {"name": "daw_transform_notes",
+     "description": "Change the notes of a track's parts (all, or the part at part_start): quantize (grid in quarter "
+                    "notes, strength 0..1), swing 50..75 (66 = triplet feel) on swing_grid (0.5 = 8ths), humanize "
+                    "0..1 (timing and velocity), transpose semitones, velocity_scale / velocity_add. pitch_min/"
+                    "pitch_max limit it to a range (e.g. only the hi-hat).",
+     "inputSchema": _schema({"track": _TRACK, "part_start": _N, "quantize": _N, "strength": _N, "swing": _N,
+                             "swing_grid": _N, "humanize": _N, "transpose": _I, "velocity_scale": _N,
+                             "velocity_add": _N, "pitch_min": _I, "pitch_max": _I, "seed": _I, "wait": _WAIT},
+                            ["track"])},
+    {"name": "daw_copy_bars",
+     "description": "Copy the notes of instrument tracks in bars from_bar..to_bar (end exclusive) to dest_bar, as new "
+                    "parts (e.g. verse to the second verse). tracks limits it (default: every instrument track). "
+                    "Audio tracks are not copied. replace deletes parts inside the destination first.",
+     "inputSchema": _schema({"from_bar": _I, "to_bar": _I, "dest_bar": _I,
+                             "tracks": {"type": "array", "items": _TRACK}, "replace": {"type": "boolean"},
+                             "wait": _WAIT}, ["from_bar", "to_bar", "dest_bar"])},
+    {"name": "daw_insert_bars",
+     "description": "Make room in the arrangement: every event (parts, audio clips) starting at at_bar or later moves "
+                    "right by bars bars, on all tracks or tracks. Instrument parts crossing at_bar are split there (notes re-written; "
+                    "split=false keeps them); audio clips crossing it are reported, not moved. "
+                    "Markers, chords, tempo and automation are not shifted.",
+     "inputSchema": _schema({"at_bar": _I, "bars": _I, "tracks": {"type": "array", "items": _TRACK},
+                             "split": {"type": "boolean"}, "wait": _WAIT}, ["at_bar", "bars"])},
+    {"name": "daw_apply_chain",
+     "description": "Put a ready effect chain on a track (Studio One effects, parameters set): role vocal, bass, pad, "
+                    "keys, lead, pluck, drums, guitar, strings, loud (limiter). Inserts go on the track's channel; "
+                    "reverb/delay sends go to a shared Room Reverb / Analog Delay FX channel (created the first time, "
+                    "later sends are written into the song file with one reopen). chains [{track, role, sends?}] does "
+                    "several tracks in one call. Tune afterwards with daw_plugin_param.",
+     "inputSchema": _schema({"track": _TRACK, "role": _S,
+                             "chains": {"type": "array", "items": _schema(
+                                 {"track": _TRACK, "role": _S, "sends": {"type": "boolean"}}, ["track", "role"])},
+                             "wait": _WAIT})},
+    {"name": "daw_load_sound",
+     "description": "Add an instrument track playing plugin with preset (from library_sounds) in one step, or load the "
+                    "preset into track. Vital .vital presets, Studio One presets and .vstpreset/.aupreset files load; "
+                    "the song is saved, closed and reopened for the preset (~8 s).",
+     "inputSchema": _schema({"plugin": _S, "preset": _S, "track": _TRACK, "name": _S, "wait": _WAIT},
+                            ["plugin", "preset"])},
+    {"name": "daw_duck",
+     "description": "Sidechain-style ducking: track's volume dips by depth_db (default 6) on every trigger note of "
+                    "trigger_track (default pitches 36/35 = kick), back after release_beats (default 0.3). Written as "
+                    "volume automation (song reopens once); start_bar/end_bar limit it.",
+     "inputSchema": _schema({"track": _TRACK, "trigger_track": _TRACK, "pitches": {"type": "array", "items": _I},
+                             "depth_db": _N, "attack_beats": _N, "release_beats": _N, "start_bar": _I, "end_bar": _I,
+                             "wait": _WAIT}, ["track", "trigger_track"])},
+    {"name": "daw_snapshot",
+     "description": "Snapshots of the open song (or path) to undo a run of edits in one step. action take (label "
+                    "optional; take one before larger changes), list, restore (snapshot id or label, default the "
+                    "latest; the song is saved, closed, replaced and reopened, the current state is backed up). "
+                    "Audio files are shared, not copied.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["take", "list", "restore"]}, "label": _S,
+                             "snapshot": _S, "path": _SONG}, ["action"])},
     {"name": "daw_read_chords",
      "description": "Chords on the Chord Track of the open song (start, length in beats, name). Write chords with "
                     "song_write_chords.",

@@ -113,7 +113,7 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
 - [O] **Part CC storage**: `Performances/<track>/<track>(n).musicx` has `envelopes: [{identity: "Control/<cc>", title: "MIDI CC 0|1", events: [{start, value}]}]`; `start` in quarter notes from part start, `value` 0..1, a step = two points at the same start. Title is the plug-in's MIDI-CC proxy parameter (Vital).
 - [O] **No script API writes CC**: part (`track.createIterator().next()`) exposes `envelopes` (only `isEmpty`), `clip`, `createIterator`, `createSequenceIterator`, `asEventList`, `getTrack`, `startTime/endTime/lengthTime`, `soundVariationMap`... (brute-forced 14.7k identifier strings). `MusicFunctions.createEvent` accepts only Note (and Note* aliases) and `DataEvent`; `EnvelopeFunctions.createEvent` nothing. Envelope point creation (`addEnvelopePoint`, `editEnvelope`) lives on `EnvelopeEditLayer` and needs editor + mouseEvent.
 - [O] `://studioapp/DocumentManager`: `activeDocument` (`title`, `path`), `interpretCommand`, `find`; no openDocument exposed. File menu Save/Revert are disabled when the song is not dirty, so Revert cannot reload a file changed on disk.
-- [O] **Offline CC write works (2026-10-17)**: `song_write_cc` re-encodes the part's musicx (UBJSON encoder round-trips all 3847 musicx/envelopex in the user's songs byte for byte: `i`/`U`/`I`/`l` ints, `D` floats, `S` strings) and rewrites only that ZIP entry. Song closed (File > Close), written CC11 on AI Test (new lane "MIDI CC 0|11") and CC1 on AI Vital, reopened from Recent Files: part `envelopes.isEmpty()` became 0. Studio One accepts a new lane whose title it never wrote.
+- [O] **Offline CC write works (2026-10-17)**: `song_write_cc` re-encodes the part's musicx (UBJSON encoder round-trips all 3847 musicx/envelopex in a set of real songs byte for byte: `i`/`U`/`I`/`l` ints, `D` floats, `S` strings) and rewrites only that ZIP entry. Song closed (File > Close), written CC11 on AI Test (new lane "MIDI CC 0|11") and CC1 on AI Vital, reopened from Recent Files: part `envelopes.isEmpty()` became 0. Studio One accepts a new lane whose title it never wrote.
 - [O] **Sound Set loops in songs (2026-10-17)**: mediapool `AudioClip` → `Url x:id="path" url="package://<package ID>/<path in .soundset>"`; package ID ↔ sound set title in mediapool `packageInfos` (`Association key value`). Decrypted tags/URLs are cached unencrypted in `<settings>/tags/cache/<package>.tags1.0.0.0.db` (sqlite `TaggedItem._url/_title/_tags`); the Sound Set's own `tags.db`/`metainfo.xml` entries are encrypted.
 - [O] A clip written with only the URL (+ optional tempo map) loads and plays; Studio One fills `format@frameCount/sampleRate/...` on the next save. Without a tempo segment it saves an empty `<AudioTempoMap tempoApproved="1"/>` (loop tempo not stored). An `AudioEvent` longer than its clip does not repeat; the rest is silent.
 - [O] Loop index: 2214 `.audioloop` placed 1 beat apart in one song, opened + saved: all got frameCount. 2222 indexed; tempo from name 1820, guessed 377, song 25. `song_add_loop` (Drum 130 Aries Tops, 16 beats, x2 from beat 24) loaded at the right position.
@@ -149,7 +149,7 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
   song.xml `MarkerTrack/MarkerEvent markerType="0" start=<quarter notes> timeFormat="2" name=..`; Start/End are
   markerType 2/3. Studio One loads and re-saves written markers. → `song_write_markers`.
 - [O] `editor.model.arranger.getArrangerTrack()` returns the Arranger Track (`createIterator`), `addArrangerEvent` exists
-  (untested). None of the user's songs has arranger sections, so the offline format is unknown.
+  (untested). None of the songs examined has arranger sections, so the offline format is unknown.
 - [O] **Sends (2026-10-18)**: a channel's `find("Sends")` folder (no `sends` property) holds slots `Send01`.. (title "FX 1",
   params `level` linear 0..3.162 shown in dB, `pan`). `DeviceEditFunctions.insertDevice(sendsFolder, effectClassID)` creates
   a new FX channel (channelType AudioEffect, label = effect name) with that effect plus a send to it.
@@ -179,3 +179,30 @@ Method: Hopper via REA timed out (analysis 2'53" > 120 s bridge wait; Hopper is 
   `Attributes x:id="attributes" hidden="0"` shows the track. Written by hand, Studio One displayed and re-saved them.
   "Create Arranger Sections from Markers" is not a global command (no category handled it). → `song_write_sections`.
 - [O] `getInsertPosition()` is not the new track's index (8 for a 6th track); the index is found by scanning the track list after creation.
+
+## Composing and sound round (2026-11-25, 5.5.2 arm64, a scratch test song)
+
+- [O] **Paths are NFD**: `DocumentManager.activeDocument.path.url` gives a decomposed-Unicode path for a song with a
+  Korean name; a path typed or passed by a client is usually NFC. Comparing strings made an open song look closed, and an
+  offline edit then wrote the file under the open song (its next save would undo the edit). Compare by `os.path.samefile`,
+  then NFC (`live.same_path`).
+- [O] **Tempo map plays the envelope**: `TempoMap > Attributes envelope > EnvelopePoint` (start in quarter notes, value =
+  (bpm - 10) / 390) is what Studio One plays, linear between points; `TempoMapSegment curveType` is ignored on load. A jump
+  needs a hold point just before it (`TEMPO_HOLD` 0.001 beat). Checked with `timeContext.ppqToSeconds`: 120 → ramp
+  90..140 matched to 1 ms. Studio One's own detected-tempo maps hold thousands of points and make jumps the same way.
+- [O] **Live time signatures**: TransportPanel `timeSignatureNum.fromString("3")` inserts a change at the real playhead,
+  but the playhead read back from the panel was stale (set to bar 5, landed at bar 10). Kept offline.
+- [O] **Bounce To New Track** writes one WAV per selected part (`<track>.wav`, `<track>(2).wav`, ...), includes the channel
+  fader but **not the insert effects** (-18 dB on a Pro EQ output and a -24 dB band changed nothing). `daw_mix_fix` therefore
+  estimates EQ cuts by filtering the stems (RBJ peaking) and says so.
+- [O] **Pro EQ display values** from 1000 on are read as kHz: `"3000"` / `"3000 Hz"` → 20 kHz (clamped), `"3 k"` → 3 kHz.
+- [O] Native effect parameters take plain numbers by `fromString`: Compressor threshold `-18`, ratio `4` → `4.0 : 1`,
+  attack `10` → `10.00 ms`; Room Reverb / Analog Delay `mix` `100` → `100 %`.
+- [O] **Vital state in a song** (`Presets/Synths/<n> - Vital.vstpreset`): `VST3` header, int64 LE chunk-list offset at
+  0x28; component = `VstW` (16 bytes) + `CcnK` BE size + `FBCh` bank (fxID `Vita`, 128 reserved bytes, BE chunk size at
+  0xdc); chunk at 0xe0 = the preset JSON (same keys as a `.vital` file) + a fixed JUCE trailer; then MetaInfo XML and
+  `List` (Comp/Cont/Info, int64 offset + size). Replacing the JSON and shifting the four sizes/offsets loads any `.vital`
+  preset (sound changed audibly; re-saved by Studio One). `preset_style` sits in the first few KB of a `.vital` file.
+- [O] **Bridge 0.9.0 live**: `batch` ran 5 ops (one failing on purpose) in one job, 0.7 s round trip. A second
+  `EditTask` class (same declaration as Run Jobs) loaded fine, and `Host.GUI.openUrl(Host.Url("http://127.0.0.1:..."))`
+  ran from it and opened the default browser (a chat page experiment, removed again: the MCP clients already chat).

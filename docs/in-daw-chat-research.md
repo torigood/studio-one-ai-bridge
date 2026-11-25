@@ -5,6 +5,8 @@ Date 2026-10-17. Read-only research, no code changed. Legend as in `re-findings.
 
 ## TL;DR
 
+- **Decision (2026-11-25):** not built. A local chat page answered by the Codex CLI worked, but it duplicated what the MCP clients (ChatGPT, Codex, Claude) already do with this bridge, so it was removed. The `openUrl(http://...)` question below is answered: it works from an EditTask.
+
 - **[O]** A Studio One script can declare real GUI: a `Gadget` (own window, form from skin XML) and an `EditAddIn` panel. Forms can hold `EditBox` (text input, `multiline` option), `ListView` (rows from a script-built `Host:ListViewModel`), `Button`. Script reads typed text and gets button/text change callbacks (`paramChanged`). So a chat window (input + transcript + Send) is **buildable**.
 - **[O]** Script has **no network and no process API**. So the panel cannot call the model. It must hand prompts to a host-side process through the mailbox files (already how the bridge works).
 - **[I]** Reply refresh can reuse the **existing virtual-MIDI CC → `Run Jobs`** trigger, no idle task needed.

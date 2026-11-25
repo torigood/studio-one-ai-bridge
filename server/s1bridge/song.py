@@ -157,6 +157,23 @@ class Song:
 
     # ---- song-level -------------------------------------------------------
     def tempo_map(self):
+        """[{start_beats, bpm, ramp?}]; ramp = glides linearly to the next entry's bpm (notegrid)."""
+        tm = self.root.find(".//TempoMap")
+        env = tm.find("Attributes") if tm is not None else None
+        pts = [(_f(p.get("start"), 0.0), 10 + 390 * _f(p.get("value"))) for p in env.iter("EnvelopePoint")] \
+            if env is not None else []
+        if pts:
+            # Studio One plays the envelope: linear between points. A point at the same bpm as the one before is a
+            # hold (a jump follows); two points closer than 0.01 quarter notes are a jump, not a glide.
+            out = []
+            for i, (beat, bpm) in enumerate(pts):
+                if out and abs(bpm - pts[i - 1][1]) < 1e-3:
+                    continue
+                e = {"start_beats": beat, "bpm": round(bpm, 3)}
+                if i + 1 < len(pts) and abs(pts[i + 1][1] - bpm) >= 1e-3 and pts[i + 1][0] - beat > 0.01:
+                    e["ramp"] = True
+                out.append(e)
+            return out
         out = []
         for seg in self.root.iter("TempoMapSegment"):
             spq = _f(seg.get("tempo"))

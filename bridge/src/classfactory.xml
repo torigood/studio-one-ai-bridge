@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ClassFactory>
-	<Version name="AI Bridge" version="0.8.0" vendor="local"/>
+	<Version name="AI Bridge" version="0.9.0" vendor="local"/>
 
 	<!-- Loaded at startup (same category as the Macro Manager service).
 	     Writes status.json; cannot edit the song (no edit context). -->

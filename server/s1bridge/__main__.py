@@ -21,7 +21,9 @@ INSTRUCTIONS = (
     "channel of their own: channel tools use their instrument output channel. replace (default true) drops "
     "old content in the written range. song_write_*/song_add_*/song_set_*/song_remove_* edit the file: if the "
     "song is open it is saved, closed, edited and reopened automatically (~8 s, undo history lost), and the "
-    "original is backed up first."
+    "original is backed up first. Before a larger run of changes take daw_snapshot (action take) so the user "
+    "can go back in one step. Prefer daw_write_pattern / daw_transform_notes / daw_copy_bars over writing "
+    "every note by hand."
 )
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 

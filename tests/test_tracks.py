@@ -1,4 +1,4 @@
-"""daw_rename_track and the instrument channel fallback, against a fake bridge (no Studio One).
+"""daw_rename_track, the instrument channel fallback and folder tracks in bounce/duplicate, against a fake bridge (no Studio One).
 
 Run: python3 -m unittest discover -s tests   (from the repo root)
 """
@@ -121,6 +121,75 @@ class InstrumentChannelHint(unittest.TestCase):
         self.assertIsNone(ch)
         sv.assert_not_called()
         save.assert_not_called()
+
+
+def _folder(name):
+    """A folder track as list_tracks reports it: no mediaType key (observed 2026-10-20)."""
+    return {"name": name, "channelType": None}
+
+
+def _music(name):
+    return {"name": name, "mediaType": "Music", "channelType": "MusicTrack"}
+
+
+class FolderBridge:
+    """Track list with folder tracks; Bounce To New Track and duplicateTrack add a track like Studio One."""
+
+    def __init__(self, tracks, songs_root=None):
+        self.tracks = tracks
+        self.songs_root = songs_root
+        self.steps = []
+
+    def listed(self):
+        return [dict(t, index=i) for i, t in enumerate(self.tracks)]
+
+    def __call__(self, op, args, wait):
+        if op == "list_tracks":
+            return {"tracks": self.listed()}
+        if op == "list_events":
+            return {"events": [{"index": 0, "start": 0.0, "length": 4.0, "mediaType": "Music"}]}
+        if op == "command":
+            # the bounced audio track lands right after its source, inside the same folder
+            src = next(i for i, t in enumerate(self.tracks) if t["name"] == "Trumpets")
+            self.tracks.insert(src + 1, {"name": "Trumpets", "mediaType": "Audio", "channelType": "AudioTrack"})
+            bounces = os.path.join(self.songs_root, "Song", "Bounces")
+            os.makedirs(bounces, exist_ok=True)
+            with open(os.path.join(bounces, "Trumpets.wav"), "wb") as f:
+                f.write(b"RIFF")
+            return {}
+        if op == "call":
+            self.steps.extend(args["steps"])
+            calls = [st.get("call") for st in args["steps"]]
+            if "duplicateTrack" in calls:
+                src = self.tracks[args["steps"][1]["args"][0]["track"]]
+                self.tracks.append(dict(src, name=src["name"] + " 2"))
+            if "removeTrack" in calls:
+                del self.tracks[args["steps"][1]["args"][0]["track"]]
+            return {"results": [{"value": "object"} for _ in args["steps"][:-1]] + [{"value": 1}]}
+        raise AssertionError("unexpected op " + op)
+
+
+class FolderTracks(unittest.TestCase):
+    """Folder tracks have no mediaType: bounce and duplicate failed with KeyError: 'mediaType'."""
+
+    def test_bounce_with_folder_tracks(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            fb = FolderBridge([_folder("Brass"), _music("Trumpets"), _folder("Percussion")], root)
+            with mock.patch.object(live, "bridge", fb), mock.patch.object(editing.config, "SONGS_ROOT", root), \
+                    mock.patch.object(editing.time, "sleep", lambda s: None):
+                r = editing.bounce("Trumpets", None, False, False, None)
+        self.assertTrue(r["wav"].endswith("Trumpets.wav"))
+        self.assertTrue(r["bounced_track_removed"])
+        removed = [st["args"][0]["track"] for st in fb.steps if st.get("call") == "removeTrack"]
+        self.assertEqual(removed, [2])
+        self.assertEqual([t["name"] for t in fb.tracks], ["Brass", "Trumpets", "Percussion"])
+
+    def test_duplicate_with_folder_tracks(self):
+        fb = FolderBridge([_folder("Brass"), _music("Trumpets")])
+        with mock.patch.object(live, "bridge", fb):
+            r = editing.duplicate_track("Trumpets", None, False, None)
+        self.assertEqual((r["index"], r["name"]), (2, "Trumpets 2"))
 
 
 if __name__ == "__main__":

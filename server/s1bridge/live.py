@@ -5,6 +5,7 @@ saved song while Studio One has it open (offline_edit).
 import os
 import subprocess
 import time
+import unicodedata
 import urllib.parse
 
 from . import clients, config, midi, setup, songwrite
@@ -55,6 +56,31 @@ def bridge(op, args, wait):
     return r.get("result")
 
 
+def batch(jobs, wait):
+    """Run [(op, args)] as one bridge job (bridge 0.9.0+: one MIDI trigger, one edit task); with an older
+    bridge, one job each. Returns [{ok, result} | {ok: False, error}] in order."""
+    if not jobs:
+        return []
+    try:
+        r = bridge("batch", {"jobs": [{"op": op, "args": args} for op, args in jobs]},
+                   max(wait or 10, 10 + len(jobs) // 10))
+    except ToolError as e:
+        if "unknown op: batch" not in str(e):
+            raise
+        r = None
+    if isinstance(r, dict) and "results" in r:
+        return r["results"]
+    if isinstance(r, dict) and r.get("status") == "not_run":
+        raise ToolError("the bridge did not answer; is Studio One running with a song open?")
+    out = []
+    for op, args in jobs:  # bridge before 0.9.0
+        try:
+            out.append({"ok": True, "result": bridge(op, args, wait)})
+        except ToolError as e:
+            out.append({"ok": False, "error": str(e)})
+    return out
+
+
 def call_steps(steps, wait, what):
     """Run steps through the bridge's call op; raise on the first failing step."""
     r = bridge("call", {"steps": steps}, wait)
@@ -96,9 +122,10 @@ def wait_for_bridge(seconds):
     return False
 
 
-def active_song_path(wait=None):
+def active_song_path(wait=None, must_exist=True):
     """File path of the song open in Studio One (DocumentManager.activeDocument.path.url), None if unknown
-    (no song open, not saved yet, or the bridge did not answer)."""
+    (no song open, not saved yet, or the bridge did not answer). must_exist=False also returns the path of
+    a new song that has its folder but was never saved."""
     if not os.path.isfile(os.path.join(Mailbox().root, "status.json")):
         return None
     try:
@@ -113,7 +140,7 @@ def active_song_path(wait=None):
     if not url or not url.startswith("file://"):
         return None
     p = urllib.parse.unquote(url[len("file://"):])
-    return p if os.path.isfile(p) else None
+    return p if not must_exist or os.path.isfile(p) else None
 
 
 def open_in_daw(path):
@@ -121,7 +148,17 @@ def open_in_daw(path):
     active = active_song_path()
     if active is None:
         return None
-    return os.path.realpath(active) == os.path.realpath(path)
+    return same_path(active, path)
+
+
+def same_path(a, b):
+    """Same file, also when one path is NFD (Studio One and Finder on macOS: Korean, accents) and the other NFC."""
+    try:
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return (unicodedata.normalize("NFC", os.path.realpath(a)) == unicodedata.normalize("NFC", os.path.realpath(b)))
 
 
 def save_open_song(path):
@@ -141,6 +178,14 @@ def offline_edit(path, write):
     inside the Run Jobs edit task crashed Studio One (2026-10-17). `open -a "Studio One 5" <song>`
     reopens the song in the running app."""
     was_open = open_in_daw(path)
+    for _ in range(3):
+        # None = the bridge did not answer (busy saving, a dialog open). Writing then would edit the file under
+        # an open song, and its next save would undo the edit (seen 2026-11-25 right after a snapshot).
+        if was_open is not None or not setup.studio_one_running():
+            break
+        # (No answer three times running: no song is open, since Run Jobs needs one.)
+        time.sleep(1.5)
+        was_open = open_in_daw(path)
     if was_open:
         save_open_song(path)
         midi.press(midi.CC_CLOSE)
