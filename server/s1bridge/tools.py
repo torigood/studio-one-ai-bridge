@@ -13,8 +13,8 @@ import json
 import os
 import sys
 
-from . import (analysis_tools, automation, chords, clients, compose, config, editing, effects, library, live, loops,
-               midi, mixer, presets, setup, snapshots, songwrite, vst3params)
+from . import (analysis_tools, automation, chords, clients, compose, config, drums, editing, effects, library, live,
+               loops, midi, mixer, presets, setup, snapshots, songwrite, vst3params)
 from .common import ToolError, find_track, song_path
 from .mailbox import Mailbox
 from .schemas import DEV_TOOLS, REMOTE_HIDDEN, TOOLS, listed_tools
@@ -395,8 +395,10 @@ HANDLERS = {
 
     # live: composing (compose.py, built on the note jobs)
     "daw_write_pattern": lambda a: compose.write_pattern(a, a.get("wait")),
+    "daw_write_drums": lambda a: drums.write_drums(a, a.get("wait")),
     "daw_transform_notes": _daw_transform_notes,
     "daw_copy_bars": lambda a: compose.copy_bars(a, a.get("wait")),
+    "daw_insert_bars": lambda a: compose.insert_bars(a, a.get("wait")),
     "daw_snapshot": _daw_snapshot,
     "daw_mix_check": lambda a: analysis_tools.daw_mix_check(a.get("tracks"), a.get("files"), a.get("wait") or 60),
 

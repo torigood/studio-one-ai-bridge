@@ -378,3 +378,65 @@ def copy_bars(a, wait):
         res["skipped"] = skipped
         res["note"] = "audio and other non-instrument tracks are not copied (copy their events in Studio One)"
     return res
+
+
+def insert_bars(a, wait):
+    """daw_insert_bars: make room at at_bar by moving every event that starts there or later right by bars bars,
+    on all tracks (or tracks), in one bridge job. Parts that cross at_bar stay and are reported."""
+    per_bar = beats_per_bar(wait)
+    at, n = int(a["at_bar"]), int(a["bars"])
+    if at < 1 or n < 1:
+        raise ToolError("at_bar and bars must be >= 1")
+    pos, shift = (at - 1) * per_bar, n * per_bar
+    tracks = live.list_tracks(wait)
+    if a.get("tracks"):
+        tracks = [t for t in tracks if t["name"] in a["tracks"] or t["index"] in a["tracks"]]
+    steps = [{"on": {"functions": ""}, "set": "executeImmediately", "value": True}]
+    moved, crossing, splits = {}, [], []
+    for t in tracks:
+        if not t.get("mediaType"):  # folder tracks have no events
+            continue
+        events = live.list_events(t["name"], wait)
+        for e in sorted(events, key=lambda e: -e["start"]):  # rightmost first: indexes stay valid
+            if e["start"] >= pos - 1e-6:
+                steps.append({"on": {"functions": ""}, "call": "moveEvent",
+                              "args": [{"event": {"track": t["name"], "index": e["index"]}}, e["start"] + shift]})
+                moved[t["name"]] = moved.get(t["name"], 0) + 1
+            elif e["start"] + e["length"] > pos + 1e-6:
+                if e.get("mediaType") == "Music" and a.get("split", True):
+                    splits.append((t["name"], e))
+                else:
+                    crossing.append({"track": t["name"], "start": e["start"], "length": e["length"]})
+    steps.append({"on": {"functions": ""}, "set": "executeImmediately", "value": False})
+    if moved:
+        live.call_steps(steps, max(wait or 10, 10 + len(steps) // 20), "moving events")
+    split_done = []
+    for track, e in splits:
+        # an instrument part across at_bar: rewrite it as two parts, the second shifted (notes re-inserted)
+        r = live.bridge("read_notes", {"track": track, "part_start": e["start"]}, wait)
+        part = (r.get("parts") or [None])[0]
+        if not part:
+            crossing.append({"track": track, "start": e["start"], "length": e["length"]})
+            continue
+        notes = [{"pitch": x["pitch"], "beat": part["start"] + x["start"], "length": x["length"],
+                  "velocity": x["velocity"]} for x in part["notes"] if not x.get("muted")]
+        before = [dict(x, length=min(x["length"], pos - x["beat"])) for x in notes if x["beat"] < pos - 1e-6]
+        after = [dict(x, beat=x["beat"] + shift) for x in notes if x["beat"] >= pos - 1e-6]
+        end = e["start"] + e["length"]
+        live.bridge("delete_event", {"track": track, "start_beats": e["start"]}, wait)
+        if before:
+            _insert(track, e["start"], pos, before, False, wait)
+        if after:
+            _insert(track, pos + shift, end + shift, after, False, wait)
+        split_done.append({"track": track, "start": e["start"], "notes_before": len(before),
+                           "notes_after": len(after)})
+        moved[track] = moved.get(track, 0) + 1
+    out = {"inserted": {"at_bar": at, "bars": n, "beats": shift}, "moved": moved}
+    if split_done:
+        out["split"] = split_done
+    if crossing:
+        out["crossing"] = crossing
+        out["warning"] = "these parts cross bar %d and were not moved; split or move them by hand" % at
+    out["note"] = ("only events moved; markers, chords, tempo/time signature changes and automation after bar %d "
+                   "stay where they are (shift them with song_write_markers / song_write_chords / ...)" % at)
+    return out

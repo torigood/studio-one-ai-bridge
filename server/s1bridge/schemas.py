@@ -355,6 +355,20 @@ TOOLS = [
          "direction": {"type": "string", "enum": ["up", "down", "updown", "random"]},
          "rate": _N, "octave": _I, "voices": _I, "velocity": _N, "gate": _N, "accent": _N, "humanize": _N,
          "seed": _I, "replace": {"type": "boolean"}, "wait": _WAIT}, ["track", "style"])},
+    {"name": "daw_write_drums",
+     "description": "Write a drum part on a drum instrument track: genre pop, rock, ballad, funk, house, trap, lofi, "
+                    "reggaeton, dnb, rnb (or groove {voice: 16 or 32 steps of x X g . r t}), from start_bar for bars "
+                    "(default 8), a fill every fill_every bars (0 = none), crash on bar 1 and after fills. voices "
+                    "limits it (kick, snare, clap, side, rim, hat, open, pedal, ride, crash, tom_high/mid/low/floor). "
+                    "General MIDI pitches; map {voice: pitch} for other kits. swing (genre default), humanize "
+                    "(default 0.3), seed, velocity scale. replace deletes parts inside the range first.",
+     "inputSchema": _schema({
+         "track": _TRACK, "genre": {"type": "string", "enum": ["pop", "rock", "ballad", "funk", "house", "trap",
+                                                              "lofi", "reggaeton", "dnb", "rnb"]},
+         "groove": {"type": "object", "additionalProperties": _S}, "start_bar": _I, "bars": _I, "fill_every": _I,
+         "crash": {"type": "boolean"}, "voices": {"type": "array", "items": _S},
+         "map": {"type": "object", "additionalProperties": _I}, "swing": _N, "humanize": _N, "seed": _I,
+         "velocity": _N, "replace": {"type": "boolean"}, "wait": _WAIT}, ["track"])},
     {"name": "daw_transform_notes",
      "description": "Change the notes of a track's parts (all, or the part at part_start): quantize (grid in quarter "
                     "notes, strength 0..1), swing 50..75 (66 = triplet feel) on swing_grid (0.5 = 8ths), humanize "
@@ -371,6 +385,13 @@ TOOLS = [
      "inputSchema": _schema({"from_bar": _I, "to_bar": _I, "dest_bar": _I,
                              "tracks": {"type": "array", "items": _TRACK}, "replace": {"type": "boolean"},
                              "wait": _WAIT}, ["from_bar", "to_bar", "dest_bar"])},
+    {"name": "daw_insert_bars",
+     "description": "Make room in the arrangement: every event (parts, audio clips) starting at at_bar or later moves "
+                    "right by bars bars, on all tracks or tracks. Instrument parts crossing at_bar are split there (notes re-written; "
+                    "split=false keeps them); audio clips crossing it are reported, not moved. "
+                    "Markers, chords, tempo and automation are not shifted.",
+     "inputSchema": _schema({"at_bar": _I, "bars": _I, "tracks": {"type": "array", "items": _TRACK},
+                             "split": {"type": "boolean"}, "wait": _WAIT}, ["at_bar", "bars"])},
     {"name": "daw_snapshot",
      "description": "Snapshots of the open song (or path) to undo a run of edits in one step. action take (label "
                     "optional; take one before larger changes), list, restore (snapshot id or label, default the "

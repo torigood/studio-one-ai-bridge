@@ -14,7 +14,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from s1bridge import compose, live, snapshots, tools  # noqa: E402
+from s1bridge import compose, drums, live, snapshots, tools  # noqa: E402
 from s1bridge.common import ToolError  # noqa: E402
 
 try:
@@ -156,6 +156,12 @@ class FakeSong:
             return {"notes": len(args["notes"])}
         if op == "edit_notes":
             return {"edited": len(args["edits"])}
+        if op == "call":
+            for st in args["steps"]:
+                if st.get("call") == "moveEvent":
+                    ref, to = st["args"][0]["event"], st["args"][1]
+                    self.tracks[ref["track"]][ref["index"]]["start"] = to
+            return {"results": [{"value": 1} for _ in args["steps"]]}
         if op == "read_chords":
             return {"chords": [{"start": 0, "length": 4, "name": "C"}, {"start": 4, "length": 4, "name": "G"}]}
         raise AssertionError("unexpected op " + op)
@@ -201,6 +207,45 @@ class LiveTools(unittest.TestCase):
         self.assertEqual([(n["start"], n["length"]) for n in new["notes"]], [(0.0, 1.0), (4.0, 4.0)])
         with self.assertRaises(ToolError):
             tools.call("daw_copy_bars", {"from_bar": 1, "to_bar": 3, "dest_bar": 2})
+
+
+class Drums(unittest.TestCase):
+    def test_pop_bar_and_fill(self):
+        h = drums.generate("pop", 4, 4.0)
+        bar1 = sorted((v, b) for v, b, _l, _v in h if b < 4)
+        self.assertIn(("crash", 0.0), bar1)
+        self.assertEqual([b for v, b in bar1 if v == "snare"], [1.0, 3.0])
+        self.assertEqual(len([1 for v, b in bar1 if v == "hat"]), 8)
+        fill = [(v, b) for v, b, _l, _v in h if 14 <= b < 16]
+        self.assertFalse(any(v == "hat" for v, _ in fill))  # the fill replaces the groove
+        self.assertEqual(len([1 for v, _ in fill if v != "kick"]), 8)
+
+    def test_trap_rolls_and_two_bar_groove(self):
+        h = drums.generate("trap", 2, 4.0, fill_every=0, crash=False)
+        hats = sorted(b for v, b, _l, _v in h if v == "hat")
+        self.assertIn(2.375, hats)  # 32nd roll in bar 1
+        self.assertTrue(any(abs(b - (4 + 2.5 + 0.25 / 3)) < 1e-9 for b in hats))  # triplet roll in bar 2
+
+    def test_custom_groove_and_voices(self):
+        h = drums.generate(None, 1, 4.0, fill_every=0, crash=False, voices=["kick"],
+                           groove={"kick": "x...x...x...x...", "hat": "xxxxxxxxxxxxxxxx"})
+        self.assertEqual([b for _v, b, _l, _vel in h], [0.0, 1.0, 2.0, 3.0])
+        with self.assertRaises(ToolError):
+            drums.generate("polka", 1, 4.0)
+
+
+class InsertBars(unittest.TestCase):
+    def test_moves_later_parts_and_splits_crossing(self):
+        fake = FakeSong()
+        fake.tracks["Keys"].append({"start": 16.0, "length": 4.0, "notes": [
+            {"index": 0, "pitch": 67, "velocity": 0.8, "start": 0.0, "length": 1.0}]})
+        with mock.patch.object(live, "bridge", fake):
+            r = tools.call("daw_insert_bars", {"at_bar": 2, "bars": 2})
+        keys = sorted(fake.tracks["Keys"], key=lambda p: p["start"])
+        self.assertEqual([(p["start"], p["length"]) for p in keys], [(0.0, 4.0), (12.0, 4.0), (24.0, 4.0)])
+        self.assertEqual(r["split"][0]["notes_before"], 1)
+        self.assertEqual([(n["pitch"], n["start"], n["length"]) for n in keys[1]["notes"]], [(64, 0.0, 6.0)])
+        self.assertEqual(keys[0]["notes"][0]["length"], 1.0)
 
 
 class Snapshots(unittest.TestCase):
@@ -266,6 +311,17 @@ class MixCheck(unittest.TestCase):
         s = 0.1 * np.sin(2 * np.pi * 1000 * t)
         lufs = mix_analysis.loudness(np.stack([s, s], axis=1), 48000)
         self.assertAlmostEqual(lufs, -20.0, delta=0.3)
+
+    def test_silent_file(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            _wav(os.path.join(tmp, "s.wav"), np.zeros((48000, 2)))
+            _wav(os.path.join(tmp, "t.wav"), 0.1 * np.ones((48000, 2)) * np.sin(np.arange(48000) / 7.0)[:, None])
+            r = mix_analysis.analyze([("s", os.path.join(tmp, "s.wav")), ("t", os.path.join(tmp, "t.wav"))])
+            self.assertTrue(r["files"]["s"]["silent"])
+            self.assertEqual(r["masking"], [])
+        finally:
+            shutil.rmtree(tmp)
 
     def test_masking_between_overlapping_stems(self):
         tmp = tempfile.mkdtemp()

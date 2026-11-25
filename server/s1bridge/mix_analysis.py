@@ -100,6 +100,10 @@ def analyze_file(path):
         raise ValueError("%s: less than half a second of audio" % path)
     mono = x.mean(axis=1)
     peak = float(np.max(np.abs(x)))
+    if peak < 1e-5:  # below -100 dBFS: nothing to measure
+        return {"seconds": round(len(x) / rate, 1), "silent": True,
+                "note": "the file is silent: is the instrument loaded and making sound, the channel unmuted?",
+                "_abs_bands": None}
     lufs = loudness(x, rate)
     out = {"seconds": round(len(x) / rate, 1),
            "loudness": {"lufs": lufs, "peak_dbfs": round(float(20 * np.log10(max(peak, 1e-12))), 1)}}
@@ -136,6 +140,8 @@ def masking(files, limit=8):
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             la, lb = files[a]["_abs_bands"], files[b]["_abs_bands"]
+            if la is None or lb is None:  # silent
+                continue
             ta, tb = max(v for v in la if v is not None), max(v for v in lb if v is not None)
             for c, va, vb in zip(CENTERS, la, lb):
                 if va is None or vb is None:
